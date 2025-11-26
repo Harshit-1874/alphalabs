@@ -6,7 +6,7 @@
     "frontend"
   ],
   "scripts": {
-    "dev": "concurrently \"bun run dev:frontend\" \"bun run dev:backend\"",
+    "dev": "concurrently --kill-others-on-fail --handle-input --prefix-colors \"blue,green\" --prefix \"[{name}]\" --names \"frontend,backend\" \"bun run dev:frontend\" \"bun run dev:backend\"",
     "dev:frontend": "bun run --filter @alphalabs/frontend dev",
     "dev:backend": "cd backend; python app.py",
     "build": "bun run --filter @alphalabs/frontend build",
