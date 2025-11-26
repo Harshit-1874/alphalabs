@@ -131,16 +131,16 @@ export function GetStartedButton() {
           href="/sign-in"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="relative inline-flex items-center justify-center gap-3 px-8 py-4 text-base font-semibold text-white bg-white/5 border border-white/10 rounded-full backdrop-blur-sm font-[family-name:var(--font-syne)]"
+          className="relative inline-flex items-center justify-center gap-3 px-8 py-4 text-base font-medium text-white/80 bg-white/[0.03] border border-white/8 rounded-full backdrop-blur-sm font-[family-name:var(--font-syne)]"
         >
           {/* Glow */}
           <motion.div
             className="absolute inset-0 rounded-full -z-10 overflow-hidden"
-            animate={{ opacity: [0.3, 0.5, 0.3], scale: [1, 1.03, 1] }}
+            animate={{ opacity: [0.2, 0.3, 0.2], scale: [1, 1.03, 1] }}
             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
           >
-            <div className="absolute inset-0 bg-white/20 rounded-full blur-md" />
-            <div className="absolute inset-[-4px] bg-white/15 rounded-full blur-xl" />
+            <div className="absolute inset-0 bg-white/8 rounded-full blur-md" />
+            <div className="absolute inset-[-4px] bg-white/5 rounded-full blur-xl" />
           </motion.div>
 
           {/* Hover bg */}
@@ -150,14 +150,14 @@ export function GetStartedButton() {
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
-                className="absolute inset-0 bg-white/10 rounded-full -z-10"
+                className="absolute inset-0 bg-white/6 rounded-full -z-10"
               />
             )}
           </AnimatePresence>
 
           {/* Content */}
           <span className="relative z-10 flex items-center gap-3">
-            Get Started
+            Start testing my model
             <motion.svg 
               className="w-5 h-5" 
               fill="none" 

@@ -23,8 +23,8 @@ const syne = Syne({
 });
 
 export const metadata: Metadata = {
-  title: "AlphaLabs",
-  description: "AI-powered creativity for the next generation",
+  title: "AlphaLab — The Wind Tunnel for Trading AIs",
+  description: "Verify an AI trading agent's skill with repeatable historical simulations and an auditable Certificate of Intelligence. No-code sandbox, BYO model key, verifiable results.",
 };
 
 export default function RootLayout({

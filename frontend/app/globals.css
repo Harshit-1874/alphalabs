@@ -24,6 +24,12 @@
     --input: 240 10% 15%;
     --ring: 270 70% 60%;
     --radius: 0.75rem;
+    /* Chart colors for stock/crypto visualization */
+    --chart-1: 142 76% 36%;
+    --chart-2: 217 91% 60%;
+    --chart-3: 270 70% 60%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 84% 60%;
   }
 
   .dark {
@@ -46,6 +52,12 @@
     --border: 240 10% 15%;
     --input: 240 10% 15%;
     --ring: 270 70% 60%;
+    /* Chart colors for stock/crypto visualization */
+    --chart-1: 142 76% 36%;
+    --chart-2: 217 91% 60%;
+    --chart-3: 270 70% 60%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 84% 60%;
   }
   .theme {
     --animate-pulse-slow: pulse-slow 3s ease-in-out infinite;
@@ -358,4 +370,207 @@ button, a, input, textarea {
     transform: translateX(100%);
     }
   }
+}
+
+/* Hero entrance animation */
+@keyframes hero-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-hero-entrance {
+  animation: hero-entrance 420ms cubic-bezier(.22,.9,.25,1) forwards;
+  animation-delay: 120ms;
+  opacity: 0;
+}
+
+/* Score count-up animation timing */
+.animate-count-up {
+  animation-duration: 0.8s;
+  animation-timing-function: cubic-bezier(0.22, 0.9, 0.25, 1);
+}
+
+/* Certificate hover effect */
+.certificate-hover {
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+
+.certificate-hover:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 20px 40px rgba(139, 92, 246, 0.3), 0 0 60px rgba(139, 92, 246, 0.15);
+}
+
+/* CTA button effects */
+.cta-primary {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.cta-primary:hover {
+  transform: scale(1.03);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+}
+
+/* Carousel slide transition */
+.carousel-slide-enter {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+.carousel-slide-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+
+/* Indicator chips animation */
+@keyframes chip-appear {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-chip {
+  animation: chip-appear 320ms ease forwards;
+}
+
+.animate-chip-stagger {
+  --stagger-delay: 20ms;
+}
+
+/* Copy feedback toast */
+@keyframes toast-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  90% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.animate-toast {
+  animation: toast-fade 2.5s ease forwards;
+}
+
+/* Prefers reduced motion - immediately show final values */
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-entrance,
+  .animate-count-up,
+  .animate-chip,
+  .animate-toast,
+  .certificate-hover,
+  .cta-primary,
+  .carousel-slide-enter-active {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  
+  /* Disable all motion for reduced motion preference */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus ring for accessibility */
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  outline: 4px solid rgba(139, 92, 246, 0.6);
+  outline-offset: 2px;
+}
+
+/* Monospace for numeric data (financial terminal aesthetic) */
+.font-mono-nums {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* High contrast text for accessibility */
+.text-high-contrast {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Candle chart animation */
+@keyframes candle-appear {
+  from {
+    opacity: 0;
+    transform: scaleY(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.animate-candle {
+  animation: candle-appear 500ms ease-out forwards;
+  transform-origin: bottom;
+}
+
+/* Marquee animations for Magic UI style */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+  }
+}
+
+@keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+  }
+}
+
+.animate-marquee {
+  animation: marquee var(--duration, 40s) linear infinite;
+}
+
+.animate-marquee-vertical {
+  animation: marquee-vertical var(--duration, 40s) linear infinite;
 }
