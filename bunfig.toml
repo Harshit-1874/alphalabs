@@ -1,0 +1,4 @@
+[install]
+# Use Bun's package manager
+auto = true
+
