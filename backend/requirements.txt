@@ -6,4 +6,6 @@ supabase==2.3.0
 pyjwt==2.8.0
 cryptography==41.0.7
 psycopg2-binary==2.9.9
+sqlalchemy[asyncio]==2.0.23
+asyncpg==0.29.0
 
