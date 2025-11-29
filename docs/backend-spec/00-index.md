@@ -210,12 +210,12 @@ uvicorn app:app --reload --port 5000
 
 ### Phase 3: Trading Engine
 - [x] Indicator calculator
-- [-] AI trader integration
+- [x] AI trader integration
 - [x] Position manager
-- [ ] Backtest engine
+- [x] Backtest engine
 
 ### Phase 4: WebSocket
-- [ ] Connection manager
+- [x] Connection manager
 - [ ] Backtest WebSocket
 - [ ] Forward test WebSocket
 - [ ] Price feed
