@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 import uuid
 
@@ -76,19 +76,84 @@ def test_update_my_settings():
         "theme": "light",
         "default_capital": 50000.00
     }
+    
+    # We need to mock the DB session specifically for this test to verify updates
+    # or we can check if the global MOCK_SETTINGS was updated (since it's a mutable object)
+    
+    # Reset MOCK_SETTINGS values before test
+    MOCK_SETTINGS.theme = "dark"
+    MOCK_SETTINGS.default_capital = 10000.00
+    
     response = client.put("/api/users/me/settings", json=payload)
+    
     assert response.status_code == 200
-    # Note: Since we mocked the DB, the returned value depends on how we mocked the session commit/refresh
-    # In this simple mock, we just check if it returns 200. 
-    # To verify the update, we'd need a more complex mock or a real DB.
-    # But this confirms the endpoint accepts the schema and runs.
+    data = response.json()
+    assert data["settings"]["theme"] == "light"
+    assert float(data["settings"]["default_capital"]) == 50000.00
+    
+    # Verify the object was updated
+    assert MOCK_SETTINGS.theme == "light"
+    assert float(MOCK_SETTINGS.default_capital) == 50000.00
+
+@patch("api.users.verify_clerk_token")
+@patch("api.users.get_user_id_from_token")
+def test_sync_user_success(mock_get_user_id, mock_verify_token):
+    """Test POST /api/users/sync success"""
+    mock_verify_token.return_value = {
+        "email": "new@example.com",
+        "first_name": "New",
+        "last_name": "User",
+        "username": "newuser",
+        "image_url": "http://image.com"
+    }
+    mock_get_user_id.return_value = "user_new123"
+    
+    # Mock DB to return None (user doesn't exist)
+    mock_session = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None # User not found
+    mock_session.execute.return_value = mock_result
+    
+    async def mock_refresh(instance):
+        instance.id = uuid.uuid4()
+        instance.plan = "free"
+        instance.timezone = "UTC"
+        instance.is_active = True
+        
+    mock_session.refresh.side_effect = mock_refresh
+    
+    async def local_mock_get_db():
+        yield mock_session
+        
+    app.dependency_overrides[get_db] = local_mock_get_db
+    
+    # We need to pass Authorization header
+    headers = {"Authorization": "Bearer test_token"}
+    response = client.post("/api/users/sync", headers=headers)
+    
+    # Reset override
+    app.dependency_overrides[get_db] = mock_get_db
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"] == "User created"
+    assert data["user"]["email"] == "new@example.com"
+    assert data["user"]["clerk_id"] == "user_new123"
 
 def test_sync_user_auth_error():
     """Test POST /api/users/sync without auth"""
-    # Remove override for this specific test if possible, or just call without header
-    # Since sync_user uses verify_clerk_token directly (not get_current_user), 
-    # we need to mock verify_clerk_token or provide a header.
+    # This endpoint requires auth header but we are not mocking the dependency here
+    # It should fail because verify_clerk_token will be called with None
     
-    # We haven't overridden verify_clerk_token in the app, so it should fail
-    response = client.post("/api/users/sync")
-    assert response.status_code == 401
+    # We need to ensure verify_clerk_token raises HTTPException(401) when token is missing/invalid
+    # In the real app, verify_clerk_token does this.
+    # Since we are NOT patching verify_clerk_token here, it will run the real function (or try to).
+    # However, without CLERK_SECRET_KEY env var, it might fail differently.
+    
+    # Let's patch it to raise 401 to simulate auth failure behavior
+    with patch("api.users.verify_clerk_token") as mock_verify:
+        from fastapi import HTTPException
+        mock_verify.side_effect = HTTPException(status_code=401, detail="Invalid token")
+        
+        response = client.post("/api/users/sync")
+        assert response.status_code == 401

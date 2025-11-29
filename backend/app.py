@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from database import get_supabase_client, get_db, validate_database_connection, validate_database_schema
+from api import users, api_keys, agents, arena, data, results
 from auth import verify_clerk_token, get_user_id_from_token
 from webhooks import verify_webhook_signature, handle_user_created, handle_user_updated, handle_user_deleted
 from models import User
@@ -126,7 +127,12 @@ app.add_middleware(
 )
 
 # Include Routers
-app.include_router(user_router)
+app.include_router(users.router)
+app.include_router(api_keys.router)
+app.include_router(agents.router)
+app.include_router(arena.router)
+app.include_router(data.router)
+app.include_router(results.router)
 
 @app.get('/api/health')
 def health():

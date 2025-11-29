@@ -104,17 +104,17 @@ class BacktestEngine:
     Supports pause/resume/stop controls for interactive testing.
     """
     
-    def __init__(self, db: AsyncSession, websocket_manager: WebSocketManager):
+    def __init__(self, session_factory, websocket_manager: WebSocketManager):
         """
         Initialize backtest engine.
         
         Args:
-            db: Database session for persistence
+            session_factory: SQLAlchemy async session factory
             websocket_manager: WebSocket manager for real-time updates
         """
-        self.db = db
+        self.session_factory = session_factory
         self.websocket_manager = websocket_manager
-        self.market_data_service = MarketDataService(db)
+        # self.market_data_service will be initialized per session/request as needed
         
         # Store active session states
         self.active_sessions: Dict[str, SessionState] = {}
@@ -159,20 +159,23 @@ class BacktestEngine:
         )
         
         try:
-            # Validate parameters
-            self._validate_parameters(asset, timeframe, start_date, end_date, starting_capital)
-            
-            # Update session status to initializing
-            await self._update_session_status(session_id, "initializing")
-            
-            # Load historical candle data
-            logger.info(f"Loading historical data for {asset} {timeframe}")
-            candles = await self.market_data_service.get_historical_data(
-                asset=asset,
-                timeframe=timeframe,
-                start_date=start_date,
-                end_date=end_date
-            )
+            # Create a new session for initialization
+            async with self.session_factory() as db:
+                # Validate parameters
+                self._validate_parameters(asset, timeframe, start_date, end_date, starting_capital)
+                
+                # Update session status to initializing
+                await self._update_session_status(db, session_id, "initializing")
+                
+                # Load historical candle data
+                logger.info(f"Loading historical data for {asset} {timeframe}")
+                market_data_service = MarketDataService(db)
+                candles = await market_data_service.get_historical_data(
+                    asset=asset,
+                    timeframe=timeframe,
+                    start_date=start_date,
+                    end_date=end_date
+                )
             
             if not candles:
                 raise ValidationError(
@@ -183,7 +186,7 @@ class BacktestEngine:
             logger.info(f"Loaded {len(candles)} candles for backtest")
             
             # Update session with total candles
-            await self._update_session_total_candles(session_id, len(candles))
+            await self._update_session_total_candles(db, session_id, len(candles))
             
             # Initialize indicator calculator
             indicator_calculator = IndicatorCalculator(
@@ -230,8 +233,8 @@ class BacktestEngine:
             self.active_sessions[session_id] = session_state
             
             # Update session status to running
-            await self._update_session_status(session_id, "running")
-            await self._update_session_started_at(session_id, datetime.utcnow())
+            await self._update_session_status(db, session_id, "running")
+            await self._update_session_started_at(db, session_id, datetime.utcnow())
             
             # Broadcast session initialized event
             await self._broadcast_session_initialized(session_id, agent, asset, timeframe, len(candles))
@@ -243,7 +246,9 @@ class BacktestEngine:
             
         except Exception as e:
             logger.error(f"Error starting backtest: {e}", exc_info=True)
-            await self._update_session_status(session_id, "failed")
+            # Create a new session for error reporting since the previous one might be broken or closed
+            async with self.session_factory() as db:
+                await self._update_session_status(db, session_id, "failed")
             await self._broadcast_error(session_id, str(e))
             raise
     
@@ -304,35 +309,35 @@ class BacktestEngine:
                 f"starting_capital must be at least $100, got ${starting_capital}"
             )
     
-    async def _update_session_status(self, session_id: str, status: str) -> None:
+    async def _update_session_status(self, db: AsyncSession, session_id: str, status: str) -> None:
         """Update session status in database."""
         stmt = (
             update(TestSession)
             .where(TestSession.id == session_id)
             .values(status=status)
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
     
-    async def _update_session_started_at(self, session_id: str, started_at: datetime) -> None:
+    async def _update_session_started_at(self, db: AsyncSession, session_id: str, started_at: datetime) -> None:
         """Update session started_at timestamp in database."""
         stmt = (
             update(TestSession)
             .where(TestSession.id == session_id)
             .values(started_at=started_at)
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
     
-    async def _update_session_total_candles(self, session_id: str, total_candles: int) -> None:
+    async def _update_session_total_candles(self, db: AsyncSession, session_id: str, total_candles: int) -> None:
         """Update session total_candles in database."""
         stmt = (
             update(TestSession)
             .where(TestSession.id == session_id)
             .values(total_candles=total_candles)
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
     
     async def _broadcast_session_initialized(
         self,
@@ -384,36 +389,39 @@ class BacktestEngine:
         logger.info(f"Starting backtest processing: session_id={session_id}")
         
         try:
-            # Process each candle
-            while session_state.current_index < len(session_state.candles):
-                # Check if stopped
-                if session_state.is_stopped:
-                    logger.info(f"Backtest stopped: session_id={session_id}")
-                    break
+            # Create session for the backtest loop
+            async with self.session_factory() as db:
+                # Process each candle
+                while session_state.current_index < len(session_state.candles):
+                    # Check if stopped
+                    if session_state.is_stopped:
+                        logger.info(f"Backtest stopped: session_id={session_id}")
+                        break
+                    
+                    # Wait if paused
+                    await session_state.pause_event.wait()
+                    
+                    # Get current candle
+                    candle = session_state.candles[session_state.current_index]
+                    
+                    # Process this candle
+                    await self._process_candle(db, session_id, session_state, candle)
+                    
+                    # Move to next candle
+                    session_state.current_index += 1
+                    
+                    # Update session current_candle in database
+                    await self._update_session_current_candle(db, session_id, session_state.current_index)
                 
-                # Wait if paused
-                await session_state.pause_event.wait()
-                
-                # Get current candle
-                candle = session_state.candles[session_state.current_index]
-                
-                # Process this candle
-                await self._process_candle(session_id, session_state, candle)
-                
-                # Move to next candle
-                session_state.current_index += 1
-                
-                # Update session current_candle in database
-                await self._update_session_current_candle(session_id, session_state.current_index)
-            
-            # Backtest completed
-            if not session_state.is_stopped:
-                logger.info(f"Backtest completed: session_id={session_id}")
-                await self._complete_backtest(session_id, session_state)
+                # Backtest completed
+                if not session_state.is_stopped:
+                    logger.info(f"Backtest completed: session_id={session_id}")
+                    await self._complete_backtest(db, session_id, session_state)
             
         except Exception as e:
             logger.error(f"Error processing backtest: {e}", exc_info=True)
-            await self._update_session_status(session_id, "failed")
+            async with self.session_factory() as db:
+                await self._update_session_status(db, session_id, "failed")
             await self._broadcast_error(session_id, str(e))
         finally:
             # Clean up session state
@@ -422,6 +430,7 @@ class BacktestEngine:
     
     async def _process_candle(
         self,
+        db: AsyncSession,
         session_id: str,
         session_state: SessionState,
         candle: Candle
@@ -462,6 +471,7 @@ class BacktestEngine:
             if close_reason:
                 closed_trade = session_state.position_manager.get_closed_trades()[-1]
                 await self._handle_position_closed(
+                    db,
                     session_id,
                     session_state,
                     closed_trade,
@@ -511,6 +521,7 @@ class BacktestEngine:
         
         # Execute AI decision
         await self._execute_decision(
+            db,
             session_id,
             session_state,
             decision,
@@ -524,6 +535,7 @@ class BacktestEngine:
     
     async def _execute_decision(
         self,
+        db: AsyncSession,
         session_id: str,
         session_state: SessionState,
         decision: AIDecision,
@@ -536,6 +548,7 @@ class BacktestEngine:
         Opens, closes, or holds positions based on AI decision.
         
         Args:
+            db: Database session
             session_id: Session identifier
             session_state: Session state object
             decision: AI decision object
@@ -553,6 +566,7 @@ class BacktestEngine:
                 )
                 if closed_trade:
                     await self._handle_position_closed(
+                        db,
                         session_id,
                         session_state,
                         closed_trade,
@@ -587,6 +601,7 @@ class BacktestEngine:
             if success:
                 position = session_state.position_manager.get_position()
                 await self._handle_position_opened(
+                    db,
                     session_id,
                     session_state,
                     position,
@@ -597,6 +612,7 @@ class BacktestEngine:
     
     async def _handle_position_opened(
         self,
+        db: AsyncSession,
         session_id: str,
         session_state: SessionState,
         position: PositionData,
@@ -610,6 +626,7 @@ class BacktestEngine:
         Saves trade to database and broadcasts event.
         
         Args:
+            db: Database session
             session_id: Session identifier
             session_state: Session state object
             position: Opened position data
@@ -638,8 +655,8 @@ class BacktestEngine:
             stop_loss=Decimal(str(position.stop_loss)) if position.stop_loss else None,
             take_profit=Decimal(str(position.take_profit)) if position.take_profit else None
         )
-        self.db.add(trade)
-        await self.db.commit()
+        db.add(trade)
+        await db.commit()
         
         # Broadcast position opened event
         event = Event(
@@ -660,6 +677,7 @@ class BacktestEngine:
     
     async def _handle_position_closed(
         self,
+        db: AsyncSession,
         session_id: str,
         session_state: SessionState,
         trade: Any,  # Trade from position_manager
@@ -672,6 +690,7 @@ class BacktestEngine:
         Updates trade in database and broadcasts event.
         
         Args:
+            db: Database session
             session_id: Session identifier
             session_state: Session state object
             trade: Closed trade data
@@ -699,8 +718,8 @@ class BacktestEngine:
                 pnl_pct=Decimal(str(trade.pnl_pct))
             )
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
         
         # Broadcast position closed event
         event = Event(
@@ -772,15 +791,15 @@ class BacktestEngine:
         )
         await self.websocket_manager.broadcast_to_session(session_id, event)
     
-    async def _update_session_current_candle(self, session_id: str, current_candle: int) -> None:
+    async def _update_session_current_candle(self, db: AsyncSession, session_id: str, current_candle: int) -> None:
         """Update session current_candle in database."""
         stmt = (
             update(TestSession)
             .where(TestSession.id == session_id)
             .values(current_candle=current_candle)
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
 
     async def pause_backtest(self, session_id: str) -> None:
         """
@@ -809,8 +828,9 @@ class BacktestEngine:
         session_state.pause_event.clear()
         
         # Update session status in database
-        await self._update_session_status(session_id, "paused")
-        await self._update_session_paused_at(session_id, datetime.utcnow())
+        async with self.session_factory() as db:
+            await self._update_session_status(db, session_id, "paused")
+            await self._update_session_paused_at(db, session_id, datetime.utcnow())
         
         # Broadcast paused event
         event = Event(
@@ -851,7 +871,8 @@ class BacktestEngine:
         session_state.pause_event.set()
         
         # Update session status in database
-        await self._update_session_status(session_id, "running")
+        async with self.session_factory() as db:
+            await self._update_session_status(db, session_id, "running")
         
         # Broadcast resumed event
         event = Event(
@@ -898,41 +919,45 @@ class BacktestEngine:
         if session_state.is_paused:
             session_state.pause_event.set()
         
-        # Close open position if requested
-        if close_position and session_state.position_manager.has_open_position():
-            current_candle = session_state.candles[session_state.current_index]
-            closed_trade = await session_state.position_manager.close_position(
-                exit_price=current_candle.close,
-                reason="manual"
-            )
-            if closed_trade:
-                await self._handle_position_closed(
-                    session_id,
-                    session_state,
-                    closed_trade,
-                    session_state.current_index,
-                    current_candle.timestamp
+        async with self.session_factory() as db:
+            # Close open position if requested
+            if close_position and session_state.position_manager.has_open_position():
+                current_candle = session_state.candles[session_state.current_index]
+                closed_trade = await session_state.position_manager.close_position(
+                    exit_price=current_candle.close,
+                    reason="manual"
                 )
-        
-        # Generate results
-        result_id = await self._complete_backtest(session_state, force_stop=True)
+                if closed_trade:
+                    await self._handle_position_closed(
+                        db,
+                        session_id,
+                        session_state,
+                        closed_trade,
+                        session_state.current_index,
+                        current_candle.timestamp
+                    )
+            
+            # Generate results
+            result_id = await self._complete_backtest(db, session_id, session_state, force_stop=True)
         
         logger.info(f"Backtest stopped: session_id={session_id}, result_id={result_id}")
         
         return result_id
     
-    async def _update_session_paused_at(self, session_id: str, paused_at: datetime) -> None:
+    async def _update_session_paused_at(self, db: AsyncSession, session_id: str, paused_at: datetime) -> None:
         """Update session paused_at timestamp in database."""
         stmt = (
             update(TestSession)
             .where(TestSession.id == session_id)
             .values(paused_at=paused_at)
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
     
     async def _complete_backtest(
         self,
+        db: AsyncSession,
+        session_id: str,
         session_state: SessionState,
         force_stop: bool = False
     ) -> str:
@@ -942,32 +967,33 @@ class BacktestEngine:
         Saves final results, AI thoughts, and broadcasts completion event.
         
         Args:
+            db: Database session
+            session_id: Session identifier
             session_state: Session state object
             force_stop: Whether this is a forced stop
             
         Returns:
             result_id: ID of generated result record
         """
-        session_id = session_state.session_id
-        
         logger.info(f"Completing backtest: session_id={session_id}")
         
         # Update session status
-        await self._update_session_status(session_id, "completed")
-        await self._update_session_completed_at(session_id, datetime.utcnow())
+        await self._update_session_status(db, session_id, "completed")
+        await self._update_session_completed_at(db, session_id, datetime.utcnow())
         
         # Get final stats
         stats = session_state.position_manager.get_stats()
         
         # Update session with final equity and PnL
         await self._update_session_final_stats(
+            db,
             session_id,
             stats["current_equity"],
             stats["equity_change_pct"]
         )
         
         # Save AI thoughts to database
-        await self._save_ai_thoughts(session_id, session_state.ai_thoughts)
+        await self._save_ai_thoughts(db, session_id, session_state.ai_thoughts)
         
         # Generate result using ResultService (will be implemented in task 10)
         # For now, we'll create a placeholder result_id
@@ -997,18 +1023,19 @@ class BacktestEngine:
         
         return result_id
     
-    async def _update_session_completed_at(self, session_id: str, completed_at: datetime) -> None:
+    async def _update_session_completed_at(self, db: AsyncSession, session_id: str, completed_at: datetime) -> None:
         """Update session completed_at timestamp in database."""
         stmt = (
             update(TestSession)
             .where(TestSession.id == session_id)
             .values(completed_at=completed_at)
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
     
     async def _update_session_final_stats(
         self,
+        db: AsyncSession,
         session_id: str,
         current_equity: float,
         current_pnl_pct: float
@@ -1022,11 +1049,12 @@ class BacktestEngine:
                 current_pnl_pct=Decimal(str(current_pnl_pct))
             )
         )
-        await self.db.execute(stmt)
-        await self.db.commit()
+        await db.execute(stmt)
+        await db.commit()
     
     async def _save_ai_thoughts(
         self,
+        db: AsyncSession,
         session_id: str,
         ai_thoughts: List[Dict[str, Any]]
     ) -> None:
@@ -1034,6 +1062,7 @@ class BacktestEngine:
         Save AI thoughts to database.
         
         Args:
+            db: Database session
             session_id: Session identifier
             ai_thoughts: List of AI thought records
         """
@@ -1051,9 +1080,9 @@ class BacktestEngine:
                 decision=thought["decision"].lower() if thought["decision"] else None,
                 order_data=thought.get("order_data")
             )
-            self.db.add(ai_thought)
+            db.add(ai_thought)
         
-        await self.db.commit()
+        await db.commit()
         
         logger.info(f"Saved AI thoughts for session {session_id}")
     

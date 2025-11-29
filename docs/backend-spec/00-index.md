@@ -204,9 +204,9 @@ uvicorn app:app --reload --port 5000
 - [X] Basic user endpoints
 
 ### Phase 2: Agent Management
-- [ ] API key encryption
-- [ ] Agent CRUD endpoints
-- [ ] Agent validation
+- [X] API key encryption
+- [x] Agent CRUD endpoints
+- [x] Agent validation
 
 ### Phase 3: Trading Engine
 - [x] Indicator calculator
@@ -216,7 +216,7 @@ uvicorn app:app --reload --port 5000
 
 ### Phase 4: WebSocket
 - [x] Connection manager
-- [ ] Backtest WebSocket
+- [] Backtest WebSocket
 - [ ] Forward test WebSocket
 - [ ] Price feed
 
