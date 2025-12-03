@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSettings } from "@/hooks/use-settings";
+import { useState } from "react";
+import { motion } from "motion/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
 export default function NotificationsSettingsPage() {
-  const { settings, updateSettings, isSaving } = useSettings();
   const [emailNotifications, setEmailNotifications] = useState({
     testCompleted: true,
     tradeExecuted: true,
@@ -23,25 +22,13 @@ export default function NotificationsSettingsPage() {
     desktopNotifications: false,
   });
 
-  useEffect(() => {
-    if (settings) {
-      setEmailNotifications({
-        testCompleted: settings.email_notifications.test_completed,
-        tradeExecuted: settings.email_notifications.trade_executed,
-        dailySummary: settings.email_notifications.daily_summary,
-        stopLossHit: settings.email_notifications.stop_loss_hit,
-        marketing: settings.email_notifications.marketing,
-      });
-      setInAppNotifications({
-        showToasts: settings.inapp_notifications.show_toasts,
-        soundEffects: settings.inapp_notifications.sound_effects,
-        desktopNotifications: settings.inapp_notifications.desktop_notifications,
-      });
-    }
-  }, [settings]);
-
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">Email Notifications</CardTitle>
@@ -215,30 +202,11 @@ export default function NotificationsSettingsPage() {
       </Card>
 
       <div className="flex justify-end">
-        <Button
-          onClick={async () => {
-            await updateSettings({
-              email_notifications: {
-                test_completed: emailNotifications.testCompleted,
-                trade_executed: emailNotifications.tradeExecuted,
-                daily_summary: emailNotifications.dailySummary,
-                stop_loss_hit: emailNotifications.stopLossHit,
-                marketing: emailNotifications.marketing,
-              },
-              inapp_notifications: {
-                show_toasts: inAppNotifications.showToasts,
-                sound_effects: inAppNotifications.soundEffects,
-                desktop_notifications: inAppNotifications.desktopNotifications,
-              },
-            });
-          }}
-          disabled={isSaving}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          {isSaving ? "Saving..." : "Save Preferences"}
+        <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+          Save Preferences
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

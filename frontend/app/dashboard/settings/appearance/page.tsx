@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
-import { useSettings } from "@/hooks/use-settings";
+import { motion } from "motion/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -15,7 +15,6 @@ import type { AccentColor } from "@/types";
 export default function AppearanceSettingsPage() {
   const { theme, setTheme } = useTheme();
   const { accentColor, setAccentColor, sidebarCollapsed, setSidebarCollapsed } = useUIStore();
-  const { updateSettings, isSaving } = useSettings();
   const [mounted, setMounted] = useState(false);
 
   // Avoid hydration mismatch
@@ -24,9 +23,9 @@ export default function AppearanceSettingsPage() {
   }, []);
 
   const accentColors: { id: AccentColor; name: string; class: string }[] = [
-    { id: "cyan", name: "Cyan", class: "bg-[hsl(190,100%,50%)]" },
-    { id: "purple", name: "Purple", class: "bg-[hsl(258,90%,66%)]" },
-    { id: "green", name: "Green", class: "bg-[hsl(142,76%,36%)]" },
+    { id: "cyan", name: "Flame", class: "bg-[hsl(14,94%,48%)]" },
+    { id: "purple", name: "Lavender", class: "bg-[hsl(263,70%,60%)]" },
+    { id: "green", name: "Emerald", class: "bg-[hsl(142,71%,45%)]" },
     { id: "amber", name: "Amber", class: "bg-[hsl(38,92%,50%)]" },
   ];
 
@@ -45,7 +44,12 @@ export default function AppearanceSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">Theme</CardTitle>
@@ -117,7 +121,7 @@ export default function AppearanceSettingsPage() {
             ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Accent color changes will apply globally across the app.
+            What's your vibe?
           </p>
         </CardContent>
       </Card>
@@ -156,19 +160,12 @@ export default function AppearanceSettingsPage() {
 
       <div className="flex justify-end">
         <Button
-          onClick={async () => {
-            await updateSettings({
-              theme: theme as string,
-              accent_color: accentColor,
-              sidebar_collapsed: sidebarCollapsed,
-            });
-          }}
-          disabled={isSaving}
+          onClick={() => toast.success("Preferences saved!")}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
-          {isSaving ? "Saving..." : "Save Preferences"}
+          Save Preferences
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }

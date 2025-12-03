@@ -18,8 +18,8 @@ export function SidebarLogo({ isCollapsed }: SidebarLogoProps) {
     >
       {/* Logo Icon - Diamond shape */}
       <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-        <div className="absolute inset-0 rotate-45 rounded-sm bg-gradient-to-br from-primary to-[hsl(var(--accent-purple))] opacity-20" />
-        <div className="absolute inset-1 rotate-45 rounded-sm bg-gradient-to-br from-primary to-[hsl(var(--accent-purple))]" />
+        <div className="absolute inset-0 rotate-45 rounded-sm bg-gradient-to-br from-[hsl(var(--brand-flame))] to-[hsl(var(--brand-lavender))] opacity-20" />
+        <div className="absolute inset-1 rotate-45 rounded-sm bg-gradient-to-br from-[hsl(var(--brand-flame))] to-[hsl(var(--brand-lavender))]" />
         <span className="relative z-10 font-mono text-xs font-bold text-white">
           α
         </span>

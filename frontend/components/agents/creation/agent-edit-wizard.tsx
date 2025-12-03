@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { ChevronLeft, Check, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -162,9 +163,9 @@ export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-medium transition-colors",
                     currentStep > step.id
-                      ? "border-[hsl(var(--accent-purple))] bg-[hsl(var(--accent-purple))] text-white"
+                      ? "border-[hsl(var(--brand-flame))] bg-[hsl(var(--brand-flame))] text-white"
                       : currentStep === step.id
-                      ? "border-[hsl(var(--accent-purple))] text-[hsl(var(--accent-purple))]"
+                      ? "border-[hsl(var(--brand-flame))] text-[hsl(var(--brand-flame))]"
                       : "border-border text-muted-foreground"
                   )}
                 >
@@ -190,7 +191,7 @@ export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
                   className={cn(
                     "mx-2 h-0.5 w-12 sm:w-20 lg:w-28",
                     currentStep > step.id
-                      ? "bg-[hsl(var(--accent-purple))]"
+                      ? "bg-[hsl(var(--brand-flame))]"
                       : "bg-border"
                   )}
                 />
@@ -230,29 +231,41 @@ export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
         </Button>
         <div className="flex gap-3">
           {currentStep > 1 && (
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+            >
+              <Button variant="outline" onClick={handleBack}>
+                Back
+              </Button>
+            </motion.div>
           )}
-          <Button
-            onClick={handleNext}
-            disabled={!canProceed() || isSaving}
-            className={cn(
-              currentStep === 4 &&
-                "bg-[hsl(var(--accent-purple))] text-white hover:bg-[hsl(var(--accent-purple))]/90"
-            )}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
-            {isSaving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : currentStep === 4 ? (
-              "Save Changes ✓"
-            ) : (
-              "Continue →"
-            )}
-          </Button>
+            <Button
+              onClick={handleNext}
+              disabled={!canProceed() || isSaving}
+              className={cn(
+                currentStep === 4 &&
+                  "bg-[hsl(var(--brand-flame))] text-white hover:bg-[hsl(var(--brand-flame))]/90"
+              )}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : currentStep === 4 ? (
+                "Save Changes ✓"
+              ) : (
+                "Continue →"
+              )}
+            </Button>
+          </motion.div>
         </div>
       </div>
     </div>

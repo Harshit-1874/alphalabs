@@ -9,12 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AnimatedDropdown,
+  AnimatedDropdownContent,
+  AnimatedDropdownItem,
+  AnimatedDropdownSeparator,
+  AnimatedDropdownTrigger,
+} from "@/components/ui/animated-dropdown";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -100,7 +100,7 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
                   variant="outline"
                   className={cn(
                     agent.mode === "monk"
-                      ? "border-[hsl(var(--accent-purple)/0.3)] text-[hsl(var(--accent-purple))]"
+                      ? "border-[hsl(var(--brand-lavender)/0.3)] text-[hsl(var(--brand-lavender))]"
                       : "border-primary/30 text-primary"
                   )}
                 >
@@ -144,31 +144,31 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
               <Play className="mr-2 h-4 w-4" />
               Forward Test
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <AnimatedDropdown>
+              <AnimatedDropdownTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleDuplicate}>
+              </AnimatedDropdownTrigger>
+              <AnimatedDropdownContent align="end">
+                <AnimatedDropdownItem onSelect={handleDuplicate}>
                   <Copy className="mr-2 h-4 w-4" />
                   Duplicate
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => toast.info("Export coming soon")}>
+                </AnimatedDropdownItem>
+                <AnimatedDropdownItem onSelect={() => toast.info("Export coming soon")}>
                   <FileDown className="mr-2 h-4 w-4" />
                   Export Config
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setShowDeleteDialog(true)}
+                </AnimatedDropdownItem>
+                <AnimatedDropdownSeparator />
+                <AnimatedDropdownItem 
+                  destructive
+                  onSelect={() => setShowDeleteDialog(true)}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </AnimatedDropdownItem>
+              </AnimatedDropdownContent>
+            </AnimatedDropdown>
           </div>
 
           {/* Delete Confirmation Dialog */}
@@ -269,7 +269,7 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
                   variant="outline"
                   className={cn(
                     agent.mode === "monk"
-                      ? "border-[hsl(var(--accent-purple)/0.3)] text-[hsl(var(--accent-purple))]"
+                      ? "border-[hsl(var(--brand-lavender)/0.3)] text-[hsl(var(--brand-lavender))]"
                       : "border-primary/30 text-primary"
                   )}
                 >

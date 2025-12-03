@@ -1,18 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, Check, Loader2 } from "lucide-react";
+import { ChevronLeft, Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { StepIdentity } from "./step-identity";
 import { StepModelApi } from "./step-model-api";
 import { StepDataBuffet } from "./step-data-buffet";
 import { StepStrategyPrompt } from "./step-strategy-prompt";
-import { useAgents, Agent } from "@/hooks/use-agents";
-import { useApiKeys } from "@/hooks/use-api-keys";
-import { useToast } from "@/hooks/use-toast";
 
 const steps = [
   { id: 1, name: "Identity", description: "Name & Mode" },
@@ -47,37 +45,10 @@ const initialFormData: AgentFormData = {
   strategyPrompt: "",
 };
 
-export interface AgentCreationWizardProps {
-  initialData?: Agent;
-  isEditMode?: boolean;
-}
-
-export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCreationWizardProps) {
+export function AgentCreationWizard() {
   const router = useRouter();
-  const { createAgent, updateAgent } = useAgents();
-  const { createApiKey } = useApiKeys();
-  const { toast } = useToast();
-
   const [currentStep, setCurrentStep] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-
-  // Initialize form data from initialData if in edit mode
-  const [formData, setFormData] = useState<AgentFormData>(() => {
-    if (isEditMode && initialData) {
-      return {
-        name: initialData.name,
-        mode: initialData.mode,
-        model: initialData.model,
-        apiKey: initialData.api_key_id || "", // Use ID if available
-        saveApiKey: false, // Not relevant for edit
-        indicators: initialData.indicators,
-        customIndicators: initialData.custom_indicators || [],
-        strategyPrompt: initialData.strategy_prompt,
-      };
-    }
-    return initialFormData;
-  });
+  const [formData, setFormData] = useState<AgentFormData>(initialFormData);
 
   const updateFormData = (updates: Partial<AgentFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -86,11 +57,7 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
   const canProceed = () => {
     switch (currentStep) {
       case 1:
-        return (
-          formData.name.length >= 2 &&
-          formData.mode !== null &&
-          !validationErrors.name
-        );
+        return formData.name.length >= 2 && formData.mode !== null;
       case 2:
         return formData.model !== "" && formData.apiKey.length > 0;
       case 3:
@@ -106,7 +73,7 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
     } else {
-      handleSubmit();
+      handleCreate();
     }
   };
 
@@ -116,64 +83,11 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
     }
   };
 
-  const handleSubmit = async () => {
-    setIsSubmitting(true);
-    try {
-      let apiKeyId = formData.apiKey;
-
-      // 1. Handle API Key (only if it's a new raw key)
-      if (formData.apiKey.startsWith("sk-")) {
-        const newKey = await createApiKey({
-          provider: "openrouter",
-          api_key: formData.apiKey,
-          label: `${formData.name} Key`,
-          set_as_default: false,
-        });
-        apiKeyId = newKey.id;
-      }
-
-      // 2. Create or Update Agent
-      if (isEditMode && initialData) {
-        await updateAgent(initialData.id, {
-          name: formData.name,
-          mode: formData.mode!,
-          model: formData.model,
-          api_key_id: apiKeyId,
-          indicators: formData.indicators,
-          custom_indicators: formData.customIndicators,
-          strategy_prompt: formData.strategyPrompt,
-        });
-        toast({
-          title: "Agent updated",
-          description: `${formData.name} configuration saved.`,
-        });
-      } else {
-        await createAgent({
-          name: formData.name,
-          mode: formData.mode!,
-          model: formData.model,
-          api_key_id: apiKeyId,
-          indicators: formData.indicators,
-          custom_indicators: formData.customIndicators,
-          strategy_prompt: formData.strategyPrompt,
-        });
-        toast({
-          title: "Agent created",
-          description: `${formData.name} is ready for the Arena.`,
-        });
-      }
-
-      router.push(isEditMode ? `/dashboard/agents/${initialData?.id}` : "/dashboard/agents");
-    } catch (err) {
-      console.error("Failed to save agent:", err);
-      toast({
-        title: `Failed to ${isEditMode ? "update" : "create"} agent`,
-        description: err instanceof Error ? err.message : "Unknown error occurred",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleCreate = async () => {
+    // In real app, call API to create agent
+    console.log("Creating agent:", formData);
+    // Navigate to agents list or agent detail
+    router.push("/dashboard/agents");
   };
 
   return (
@@ -181,15 +95,13 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
       {/* Header */}
       <div className="mb-8">
         <Link
-          href={isEditMode && initialData ? `/dashboard/agents/${initialData.id}` : "/dashboard/agents"}
+          href="/dashboard/agents"
           className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" />
-          {isEditMode ? "Back to Agent" : "Back to Agents"}
+          Back to Agents
         </Link>
-        <h1 className="font-mono text-2xl font-bold">
-          {isEditMode ? `Edit ${initialData?.name}` : "Create New Agent"}
-        </h1>
+        <h1 className="font-mono text-2xl font-bold">Create New Agent</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Step {currentStep} of 4: {steps[currentStep - 1].name}
         </p>
@@ -208,8 +120,8 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
                     currentStep > step.id
                       ? "border-primary bg-primary text-primary-foreground"
                       : currentStep === step.id
-                        ? "border-primary text-primary"
-                        : "border-border text-muted-foreground"
+                      ? "border-primary text-primary"
+                      : "border-border text-muted-foreground"
                   )}
                 >
                   {currentStep > step.id ? (
@@ -248,12 +160,7 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
       {/* Step Content */}
       <div className="mb-8 rounded-lg border border-border/50 bg-card/30 p-6">
         {currentStep === 1 && (
-          <StepIdentity
-            formData={formData}
-            updateFormData={updateFormData}
-            validationErrors={validationErrors}
-            setValidationErrors={setValidationErrors}
-          />
+          <StepIdentity formData={formData} updateFormData={updateFormData} />
         )}
         {currentStep === 2 && (
           <StepModelApi formData={formData} updateFormData={updateFormData} />
@@ -268,30 +175,37 @@ export function AgentCreationWizard({ initialData, isEditMode = false }: AgentCr
 
       {/* Navigation Footer */}
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          onClick={() => router.push(isEditMode && initialData ? `/dashboard/agents/${initialData.id}` : "/dashboard/agents")}
-          disabled={isSubmitting}
-        >
+        <Button variant="ghost" onClick={() => router.push("/dashboard/agents")}>
           Cancel
         </Button>
         <div className="flex gap-3">
           {currentStep > 1 && (
-            <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
-              Back
-            </Button>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+            >
+              <Button variant="outline" onClick={handleBack}>
+                Back
+              </Button>
+            </motion.div>
           )}
-          <Button
-            onClick={handleNext}
-            disabled={!canProceed() || isSubmitting}
-            className={cn(
-              currentStep === 4 &&
-              "bg-primary text-primary-foreground hover:bg-primary/90"
-            )}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {currentStep === 4 ? (isEditMode ? "Save Changes" : "Create Agent") : "Continue →"}
-          </Button>
+            <Button
+              onClick={handleNext}
+              disabled={!canProceed()}
+              className={cn(
+                currentStep === 4 &&
+                  "bg-primary text-primary-foreground hover:bg-primary/90"
+              )}
+            >
+              {currentStep === 4 ? "Create Agent ->" : "Continue ->"}
+            </Button>
+          </motion.div>
         </div>
       </div>
     </div>

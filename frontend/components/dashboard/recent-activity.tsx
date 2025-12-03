@@ -100,51 +100,57 @@ function ActivityItemCard({ activity }: { activity: ActivityItem }) {
   };
 
   return (
-    <div className="group flex items-center gap-4 rounded-lg border border-border/50 bg-card/30 p-4 transition-colors hover:bg-muted/30">
-      {/* Status Indicator */}
-      <div className={cn("h-2 w-2 shrink-0 rounded-full", getStatusColor())} />
+    <div className="group rounded-lg border border-border/50 bg-card/30 p-3 sm:p-4 transition-colors hover:bg-muted/30">
+      {/* Mobile: Stack layout, Desktop: Flex row */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        {/* Top row on mobile: Status + Agent Name + Badge */}
+        <div className="flex items-center gap-3 sm:flex-1 min-w-0">
+          {/* Status Indicator */}
+          <div className={cn("h-2 w-2 shrink-0 rounded-full", getStatusColor())} />
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-medium">{activity.agentName}</span>
-          <span className="text-sm text-muted-foreground">{getActionLabel()}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{activity.timestamp}</span>
-          {activity.details && (
-            <>
-              <span>•</span>
-              <span>{activity.details}</span>
-            </>
+          {/* Content */}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-mono text-sm font-medium">{activity.agentName}</span>
+              <span className="text-sm text-muted-foreground">{getActionLabel()}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground mt-0.5">
+              <span>{activity.timestamp}</span>
+              {activity.details && (
+                <>
+                  <span className="hidden xs:inline">•</span>
+                  <span className="w-full xs:w-auto">{activity.details}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Result Badge - visible on mobile in the row */}
+          {activity.result !== undefined && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "font-mono text-xs shrink-0",
+                activity.result > 0
+                  ? "border-[hsl(var(--accent-green)/0.3)] bg-[hsl(var(--accent-green)/0.1)] text-[hsl(var(--accent-green))]"
+                  : "border-[hsl(var(--accent-red)/0.3)] bg-[hsl(var(--accent-red)/0.1)] text-[hsl(var(--accent-red))]"
+              )}
+            >
+              {activity.result > 0 ? "+" : ""}
+              {activity.result}%
+            </Badge>
           )}
         </div>
-      </div>
 
-      {/* Result Badge */}
-      {activity.result !== undefined && (
-        <Badge
-          variant="outline"
-          className={cn(
-            "font-mono text-xs",
-            activity.result > 0
-              ? "border-[hsl(var(--accent-green)/0.3)] bg-[hsl(var(--accent-green)/0.1)] text-[hsl(var(--accent-green))]"
-              : "border-[hsl(var(--accent-red)/0.3)] bg-[hsl(var(--accent-red)/0.1)] text-[hsl(var(--accent-red))]"
-          )}
+        {/* Action Link - always visible on mobile, hover on desktop */}
+        <Link
+          href={getLinkHref()}
+          className="flex items-center gap-1 text-xs text-muted-foreground sm:opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground ml-5 sm:ml-0"
         >
-          {activity.result > 0 ? "+" : ""}
-          {activity.result}%
-        </Badge>
-      )}
-
-      {/* Action Link */}
-      <Link
-        href={getLinkHref()}
-        className="flex items-center gap-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
-      >
-        {getLinkLabel()}
-        <ArrowRight className="h-3 w-3" />
-      </Link>
+          {getLinkLabel()}
+          <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
     </div>
   );
 }

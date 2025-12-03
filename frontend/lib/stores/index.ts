@@ -4,4 +4,14 @@ export { useUIStore } from "./ui-store";
 export { useAgentsStore } from "./agents-store";
 export { useArenaStore } from "./arena-store";
 export { useResultsStore } from "./results-store";
+export { useDynamicIslandStore } from "./dynamic-island-store";
+export type {
+  IslandMode,
+  TradeData,
+  NarratorData,
+  CelebrationData,
+  AlphaData,
+  ConnectionData,
+  LiveSessionData,
+} from "./dynamic-island-store";
 

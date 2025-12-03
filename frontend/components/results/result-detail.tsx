@@ -117,7 +117,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
                 </Button>
                 <Button
                   size="sm"
-                  className="gap-2 bg-[hsl(var(--accent-purple))] text-white hover:bg-[hsl(var(--accent-purple))]/90"
+                  className="gap-2 bg-[hsl(var(--brand-flame))] text-white hover:bg-[hsl(var(--brand-flame))]/90"
                 >
                   <Award className="h-4 w-4" />
                   Certificate
@@ -369,7 +369,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
           <Card className="border-border/50 bg-card/30">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Lightning size={18} weight="duotone" className="text-[hsl(var(--accent-purple))]" />
+                <Lightning size={18} weight="duotone" className="text-[hsl(var(--brand-flame))]" />
                 AI Performance Analysis
               </CardTitle>
             </CardHeader>

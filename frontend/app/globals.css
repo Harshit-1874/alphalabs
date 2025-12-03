@@ -7,70 +7,78 @@
 @layer base {
   /* ============================================
      LIGHT MODE (Default - :root)
-     Clean, professional with good contrast
+     AlphaLabs Brand: Soft warm light, not harsh white
      ============================================ */
   :root {
     --radius: 0.5rem;
     
-    /* Backgrounds */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 98%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
+    /* Brand Colors - LD2 Palette */
+    --brand-flame: 14 94% 48%;        /* #E8400D - Primary brand */
+    --brand-lavender: 263 100% 85%;   /* #D0B2FF - Secondary accent */
+    --brand-cream: 34 100% 93%;       /* #FFEED8 - Warm highlight */
     
-    /* Primary - Emerald */
-    --primary: 160 84% 39%;
+    /* Backgrounds - Soft warm tones, NOT pure white */
+    --background: 40 30% 98%;         /* Warm off-white #FDFCFA */
+    --foreground: 20 15% 15%;         /* Warm dark gray, not pure black */
+    --card: 40 25% 97%;               /* Slightly darker warm white #FAF9F7 */
+    --card-foreground: 20 15% 15%;
+    --popover: 40 30% 99%;
+    --popover-foreground: 20 15% 15%;
+    
+    /* Primary - Flame Orange */
+    --primary: 14 94% 48%;
     --primary-foreground: 0 0% 100%;
     
-    /* Secondary */
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
+    /* Secondary - Warm neutral */
+    --secondary: 35 20% 94%;
+    --secondary-foreground: 20 15% 15%;
     
-    /* Muted */
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
+    /* Muted - Warm gray */
+    --muted: 35 15% 93%;
+    --muted-foreground: 20 10% 45%;
     
-    /* Accent - Purple */
-    --accent: 263 70% 50%;
-    --accent-foreground: 0 0% 100%;
+    /* Accent - Warm hover state */
+    --accent: 35 20% 93%;
+    --accent-foreground: 20 15% 15%;
     
-    /* Destructive - Rose */
-    --destructive: 347 77% 50%;
+    /* Destructive - Red */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     
-    /* Borders & Inputs */
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 160 84% 39%;
+    /* Borders & Inputs - Warm gray */
+    --border: 35 15% 88%;
+    --input: 35 15% 88%;
+    --ring: 14 94% 48%;
     
     /* Semantic colors for trading */
-    --accent-green: 160 84% 39%;
-    --accent-profit: 142 76% 36%;
-    --accent-red: 347 77% 50%;
+    --accent-green: 142 71% 45%;
+    --accent-profit: 142 71% 45%;
+    --accent-red: 0 84% 60%;
     --accent-amber: 38 92% 50%;
     --accent-blue: 217 91% 60%;
-    --accent-purple: 263 70% 50%;
+    --accent-purple: 263 70% 60%;
+    --accent-flame: 14 94% 48%;
+    --accent-lavender: 263 100% 85%;
+    --accent-cream: 34 100% 93%;
     
-    /* Chart colors */
-    --chart-1: 142 76% 36%;
-    --chart-2: 217 91% 60%;
-    --chart-3: 263 70% 50%;
-    --chart-4: 38 92% 50%;
-    --chart-5: 347 77% 50%;
+    /* Chart colors - Brand-aligned */
+    --chart-1: 14 94% 48%;            /* Flame - Primary series */
+    --chart-2: 263 100% 75%;          /* Lavender - Secondary */
+    --chart-3: 34 100% 85%;           /* Cream - Tertiary */
+    --chart-4: 142 71% 45%;           /* Green - Profit */
+    --chart-5: 0 84% 60%;             /* Red - Loss */
     
     /* Sidebar */
     --sidebar-width-expanded: 240px;
     --sidebar-width-collapsed: 64px;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 10% 3.9%;
-    --sidebar-primary: 160 84% 39%;
+    --sidebar-background: 40 25% 97%;
+    --sidebar-foreground: 20 15% 15%;
+    --sidebar-primary: 14 94% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 240 5.9% 90%;
-    --sidebar-ring: 160 84% 39%;
+    --sidebar-accent: 35 20% 93%;
+    --sidebar-accent-foreground: 20 15% 15%;
+    --sidebar-border: 35 15% 88%;
+    --sidebar-ring: 14 94% 48%;
     
     /* Nav items */
     --nav-item-height: 40px;
@@ -79,66 +87,74 @@
 
   /* ============================================
      DARK MODE
-     Rich, easy on eyes with vibrant accents
+     Rich dark with vibrant Flame/Lavender accents
      ============================================ */
   .dark {
-    /* Backgrounds - Zinc scale */
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 7%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 7%;
-    --popover-foreground: 0 0% 98%;
+    /* Brand Colors - Adjusted for dark */
+    --brand-flame: 14 94% 52%;        /* Brighter flame for dark */
+    --brand-lavender: 263 100% 80%;   /* Adjusted lavender */
+    --brand-cream: 34 100% 88%;       /* Adjusted cream */
     
-    /* Primary - Emerald (brighter for dark) */
-    --primary: 160 84% 45%;
-    --primary-foreground: 240 10% 3.9%;
+    /* Backgrounds - True black base (like LD2 cards) */
+    --background: 0 0% 4%;
+    --foreground: 34 20% 95%;
+    --card: 0 0% 7%;
+    --card-foreground: 34 20% 95%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 34 20% 95%;
     
-    /* Secondary - more visible */
-    --secondary: 240 5% 22%;
-    --secondary-foreground: 0 0% 98%;
+    /* Primary - Flame Orange (brighter for dark) */
+    --primary: 14 94% 52%;
+    --primary-foreground: 0 0% 0%;
+    
+    /* Secondary */
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 34 20% 95%;
     
     /* Muted */
-    --muted: 240 5.2% 18%;
-    --muted-foreground: 240 5% 64.9%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
     
-    /* Accent - Purple (brighter) */
-    --accent: 263 70% 58%;
-    --accent-foreground: 0 0% 98%;
+    /* Accent - Neutral for UI hovers (use brand-lavender for brand accent) */
+    --accent: 0 0% 12%;
+    --accent-foreground: 34 20% 95%;
     
-    /* Destructive - Rose */
-    --destructive: 347 77% 55%;
-    --destructive-foreground: 0 0% 98%;
+    /* Destructive */
+    --destructive: 0 84% 65%;
+    --destructive-foreground: 0 0% 100%;
     
     /* Borders & Inputs */
-    --border: 240 5.2% 18%;
-    --input: 240 5.2% 18%;
-    --ring: 160 84% 45%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 14 94% 52%;
     
     /* Semantic colors for trading (brighter for dark mode) */
-    --accent-green: 160 84% 45%;
-    --accent-profit: 142 71% 50%;
-    --accent-red: 347 77% 55%;
-    --accent-amber: 38 92% 55%;
-    --accent-blue: 217 91% 65%;
-    --accent-purple: 263 70% 58%;
+    --accent-green: 142 76% 55%;
+    --accent-profit: 142 76% 55%;
+    --accent-red: 0 84% 65%;
+    --accent-amber: 38 92% 60%;
+    --accent-blue: 217 91% 70%;
+    --accent-purple: 263 70% 70%;
+    --accent-flame: 14 94% 52%;
+    --accent-lavender: 263 100% 80%;
+    --accent-cream: 34 100% 88%;
     
-    /* Chart colors */
-    --chart-1: 142 71% 50%;
-    --chart-2: 217 91% 65%;
-    --chart-3: 263 70% 58%;
-    --chart-4: 38 92% 55%;
-    --chart-5: 347 77% 55%;
+    /* Chart colors - Brand-aligned for dark */
+    --chart-1: 14 94% 52%;            /* Flame */
+    --chart-2: 263 100% 80%;          /* Lavender */
+    --chart-3: 34 100% 85%;           /* Cream */
+    --chart-4: 142 76% 55%;           /* Green */
+    --chart-5: 0 84% 65%;             /* Red */
     
     /* Sidebar */
-    --sidebar-background: 240 10% 3.9%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 160 84% 45%;
-    --sidebar-primary-foreground: 240 10% 3.9%;
-    --sidebar-accent: 240 5.2% 15%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 240 5.2% 18%;
-    --sidebar-ring: 160 84% 45%;
+    --sidebar-background: 0 0% 4%;
+    --sidebar-foreground: 34 20% 95%;
+    --sidebar-primary: 14 94% 52%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 34 20% 95%;
+    --sidebar-border: 0 0% 15%;
+    --sidebar-ring: 14 94% 52%;
   }
 }
 
@@ -199,13 +215,13 @@ h1, h2, h3, .heading {
 
 /* Selection styling */
 ::selection {
-  background: hsl(var(--accent-purple) / 0.4);
+  background: hsl(var(--brand-flame) / 0.3);
   color: white;
 }
 
 /* Focus states */
 *:focus-visible {
-  outline: 2px solid hsl(var(--accent-green) / 0.6);
+  outline: 2px solid hsl(var(--brand-flame) / 0.6);
   outline-offset: 2px;
 }
 
@@ -269,12 +285,24 @@ h1, h2, h3, .heading {
   border-color: hsl(var(--border-default) / 0.8);
 }
 
-/* Gradient text */
+/* Gradient text - Brand aligned */
 .gradient-text {
-  background: linear-gradient(135deg, hsl(var(--accent-green)) 0%, hsl(var(--accent-blue)) 50%, hsl(var(--accent-purple)) 100%);
+  background: linear-gradient(135deg, hsl(var(--brand-flame)) 0%, hsl(var(--brand-lavender)) 50%, hsl(var(--brand-cream)) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* Brand gradient utilities */
+.gradient-brand {
+  background: linear-gradient(135deg, hsl(var(--brand-flame)) 0%, hsl(var(--brand-lavender)) 50%, hsl(var(--brand-cream)) 100%);
+}
+
+.gradient-brand-mesh {
+  background: 
+    radial-gradient(circle at 80% 20%, hsl(var(--brand-flame) / 0.4) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, hsl(var(--brand-lavender) / 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, hsl(var(--brand-cream) / 0.2) 0%, transparent 50%);
 }
 
 /* Monospace for numeric data (financial terminal aesthetic) */
@@ -345,6 +373,212 @@ h1, h2, h3, .heading {
 .animate-slide-in-left { animation: slide-in-left 0.3s ease-out; }
 .animate-scale-in { animation: scale-in 0.2s ease-out; }
 
+/* ============================================
+   DYNAMIC ISLAND ANIMATIONS
+   AI presence, notifications, celebrations
+   ============================================ */
+
+/* Breathing animation - AI idle state */
+@keyframes island-breathe {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 hsl(var(--brand-flame) / 0.3);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 20px 4px hsl(var(--brand-flame) / 0.15);
+  }
+}
+
+.animate-island-breathe {
+  animation: island-breathe 3s ease-in-out infinite;
+}
+
+/* Scanner animation - AI analyzing */
+@keyframes island-scan {
+  0% {
+    background-position: -100% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.island-scanner {
+  position: relative;
+  overflow: hidden;
+}
+
+.island-scanner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--brand-flame) / 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 50% 100%;
+  animation: island-scan 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Glow burst - Alpha detected / Trade executed */
+@keyframes island-glow-burst {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--brand-flame) / 0.6);
+  }
+  50% {
+    box-shadow: 0 0 30px 10px hsl(var(--brand-flame) / 0.4);
+  }
+  100% {
+    box-shadow: 0 0 15px 5px hsl(var(--brand-flame) / 0.2);
+  }
+}
+
+.animate-island-glow-burst {
+  animation: island-glow-burst 0.6s ease-out forwards;
+}
+
+/* Profit glow - Celebration state */
+@keyframes island-profit-glow {
+  0%, 100% {
+    box-shadow: 
+      0 0 20px 5px hsl(var(--accent-profit) / 0.3),
+      0 0 40px 10px hsl(var(--accent-profit) / 0.15);
+  }
+  50% {
+    box-shadow: 
+      0 0 30px 10px hsl(var(--accent-profit) / 0.4),
+      0 0 60px 20px hsl(var(--accent-profit) / 0.2);
+  }
+}
+
+.animate-island-profit-glow {
+  animation: island-profit-glow 1s ease-in-out infinite;
+}
+
+/* Loss glow - For negative celebrations */
+@keyframes island-loss-glow {
+  0%, 100% {
+    box-shadow: 0 0 15px 5px hsl(var(--accent-red) / 0.2);
+  }
+  50% {
+    box-shadow: 0 0 25px 8px hsl(var(--accent-red) / 0.3);
+  }
+}
+
+.animate-island-loss-glow {
+  animation: island-loss-glow 1.5s ease-in-out infinite;
+}
+
+/* Typing cursor animation */
+@keyframes typing-cursor {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.typing-cursor::after {
+  content: '|';
+  animation: typing-cursor 1s step-end infinite;
+  margin-left: 2px;
+  color: hsl(var(--brand-flame));
+}
+
+/* Connection status pulse */
+@keyframes island-connected-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px 2px hsl(var(--accent-profit) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 5px hsl(var(--accent-profit) / 0.6);
+  }
+}
+
+@keyframes island-disconnected-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px 2px hsl(var(--accent-red) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 5px hsl(var(--accent-red) / 0.6);
+  }
+}
+
+.animate-island-connected {
+  animation: island-connected-pulse 2s ease-in-out infinite;
+}
+
+.animate-island-disconnected {
+  animation: island-disconnected-pulse 1s ease-in-out infinite;
+}
+
+/* Snap entrance - for alpha/trade reveals */
+@keyframes island-snap-in {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-island-snap-in {
+  animation: island-snap-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Slide up entrance for content */
+@keyframes island-content-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-island-content-enter {
+  animation: island-content-enter 0.3s ease-out forwards;
+}
+
+/* Stagger children animation helper */
+.island-stagger > * {
+  opacity: 0;
+  animation: island-content-enter 0.3s ease-out forwards;
+}
+
+.island-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.island-stagger > *:nth-child(2) { animation-delay: 0.1s; }
+.island-stagger > *:nth-child(3) { animation-delay: 0.15s; }
+.island-stagger > *:nth-child(4) { animation-delay: 0.2s; }
+.island-stagger > *:nth-child(5) { animation-delay: 0.25s; }
+
+/* Direction arrows animation */
+@keyframes arrow-up-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes arrow-down-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
+
+.animate-arrow-up {
+  animation: arrow-up-bounce 0.6s ease-in-out infinite;
+}
+
+.animate-arrow-down {
+  animation: arrow-down-bounce 0.6s ease-in-out infinite;
+}
+
 /* Sidebar transitions */
 .sidebar-transition {
   transition: width 200ms ease, padding 200ms ease;
@@ -365,7 +599,7 @@ h1, h2, h3, .heading {
   border-color: hsl(var(--border-default) / 0.8);
 }
 
-/* Button glow effect */
+/* Button glow effect - Brand aligned */
 .btn-glow {
   position: relative;
 }
@@ -374,7 +608,7 @@ h1, h2, h3, .heading {
   content: '';
   position: absolute;
   inset: -2px;
-  background: linear-gradient(135deg, hsl(var(--accent-green)), hsl(var(--accent-blue)));
+  background: linear-gradient(135deg, hsl(var(--brand-flame)), hsl(var(--brand-lavender)));
   border-radius: inherit;
   opacity: 0;
   transition: opacity 200ms ease;
@@ -386,6 +620,18 @@ h1, h2, h3, .heading {
   opacity: 0.5;
 }
 
+/* Brand button variants */
+.btn-flame {
+  background: hsl(var(--brand-flame));
+  color: white;
+  transition: all 200ms ease;
+}
+
+.btn-flame:hover {
+  background: hsl(var(--brand-flame) / 0.9);
+  box-shadow: 0 4px 20px hsl(var(--brand-flame) / 0.3);
+}
+
 /* Status indicators */
 .status-dot {
   width: 8px;
@@ -394,14 +640,20 @@ h1, h2, h3, .heading {
 }
 
 .status-dot-live {
-  background: hsl(var(--accent-green));
-  box-shadow: 0 0 8px hsl(var(--accent-green) / 0.6);
+  background: hsl(var(--accent-profit));
+  box-shadow: 0 0 8px hsl(var(--accent-profit) / 0.6);
   animation: pulse-live 2s ease-in-out infinite;
 }
 
 .status-dot-pending {
-  background: hsl(var(--accent-amber));
-  box-shadow: 0 0 8px hsl(var(--accent-amber) / 0.6);
+  background: hsl(var(--brand-lavender));
+  box-shadow: 0 0 8px hsl(var(--brand-lavender) / 0.6);
+}
+
+.status-dot-processing {
+  background: hsl(var(--brand-flame));
+  box-shadow: 0 0 8px hsl(var(--brand-flame) / 0.6);
+  animation: pulse-live 1.5s ease-in-out infinite;
 }
 
 .status-dot-error {
@@ -466,8 +718,8 @@ h1, h2, h3, .heading {
 
 /* Form input glow on focus */
 .input-glow:focus {
-  box-shadow: 0 0 0 2px hsl(var(--accent-green) / 0.2);
-  border-color: hsl(var(--accent-green));
+  box-shadow: 0 0 0 2px hsl(var(--brand-flame) / 0.2);
+  border-color: hsl(var(--brand-flame));
 }
 
 /* Badge variants */
@@ -499,6 +751,25 @@ h1, h2, h3, .heading {
   background: hsl(var(--accent-purple) / 0.15);
   color: hsl(var(--accent-purple));
   border: 1px solid hsl(var(--accent-purple) / 0.3);
+}
+
+/* Brand badge variants */
+.badge-flame {
+  background: hsl(var(--brand-flame) / 0.15);
+  color: hsl(var(--brand-flame));
+  border: 1px solid hsl(var(--brand-flame) / 0.3);
+}
+
+.badge-lavender {
+  background: hsl(var(--brand-lavender) / 0.2);
+  color: hsl(263 70% 50%);
+  border: 1px solid hsl(var(--brand-lavender) / 0.4);
+}
+
+.badge-cream {
+  background: hsl(var(--brand-cream) / 0.4);
+  color: hsl(34 50% 30%);
+  border: 1px solid hsl(var(--brand-cream) / 0.6);
 }
 
 /* Marquee animations */
@@ -549,7 +820,7 @@ h1, h2, h3, .heading {
   gap: 0.75rem;
   overflow: hidden;
   color: white;
-  text-shadow: 0 0 40px rgba(255, 255, 255, 0.3), 0 0 80px hsl(var(--accent-purple) / 0.2);
+  text-shadow: 0 0 40px rgba(255, 255, 255, 0.3), 0 0 80px hsl(var(--brand-flame) / 0.3);
 }
 
 .hero-subtitle {
@@ -612,7 +883,7 @@ h1, h2, h3, .heading {
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateX(-50%) translateY(-3px);
-  box-shadow: 0 10px 40px hsl(var(--accent-purple) / 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  box-shadow: 0 10px 40px hsl(var(--brand-flame) / 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
 @media (max-width: 768px) {
@@ -632,6 +903,48 @@ h1, h2, h3, .heading {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Card gradient shine effect for light mode */
+/* Creates a subtle glass-like shine from top-left corner */
+.card-gradient-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-gradient-shine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    /* Primary shine - bright warm highlight from top-left */
+    linear-gradient(
+      125deg,
+      hsl(45 50% 98% / 0.9) 0%,
+      hsl(40 40% 97% / 0.6) 15%,
+      hsl(35 30% 96% / 0.3) 35%,
+      transparent 55%
+    ),
+    /* Secondary subtle warmth at bottom-right */
+    linear-gradient(
+      305deg,
+      hsl(30 20% 94% / 0.4) 0%,
+      transparent 40%
+    );
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 1;
+}
+
+/* Dark mode: hide gradient overlay */
+.dark .card-gradient-shine::before {
+  display: none;
+}
+
+/* Ensure card content is above the gradient overlay */
+.card-gradient-shine > * {
+  position: relative;
+  z-index: 2;
 }
 
 /* Base layer */

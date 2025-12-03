@@ -1,25 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useUserProfile } from "@/hooks/use-user";
-import { useSettings } from "@/hooks/use-settings";
-import { useApi } from "@/lib/api";
+import { motion } from "motion/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { toast } from "sonner";
 
 const timezones = [
   { value: "UTC", label: "(UTC+00:00) UTC" },
@@ -31,74 +27,27 @@ const timezones = [
 ];
 
 export default function ProfileSettingsPage() {
-  const { userProfile, isLoading, updateUserProfile, refetch } = useUserProfile();
-  const { updateSettings, isSaving } = useSettings();
   const { user } = useUser();
-  const { request } = useApi();
-  const [displayName, setDisplayName] = useState("");
+  const [displayName, setDisplayName] = useState(
+    user?.firstName && user?.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : user?.username || ""
+  );
   const [timezone, setTimezone] = useState("Asia/Kolkata");
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  useEffect(() => {
-    if (userProfile) {
-      setDisplayName(`${userProfile.first_name} ${userProfile.last_name}`.trim() || userProfile.username);
-      if (userProfile.timezone) {
-        setTimezone(userProfile.timezone);
-      }
-    }
-  }, [userProfile]);
+  const initials = user?.firstName && user?.lastName
+    ? `${user.firstName[0]}${user.lastName[0]}`
+    : user?.emailAddresses[0]?.emailAddress.slice(0, 2).toUpperCase() || "U";
 
-  const handleSaveChanges = async () => {
-    try {
-      setIsSavingProfile(true);
-
-      // Parse display name into first and last name
-      const nameParts = displayName.trim().split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
-
-      // Update Clerk user (name only)
-      if (user) {
-        await user.update({
-          firstName: firstName,
-          lastName: lastName,
-        });
-      }
-
-      // Sync to database (updates name from Clerk)
-      await request("/api/users/sync", { method: "POST" });
-
-      // Update timezone via our API
-      await updateUserProfile({ timezone });
-
-      toast.success("Profile updated successfully");
-    } catch (error) {
-      console.error("Failed to update profile:", error);
-      toast.error("Failed to update profile");
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="w-full max-w-md space-y-4">
-          <div className="text-center text-sm text-muted-foreground">Loading profile...</div>
-          <Progress value={undefined} className="w-full" />
-        </div>
-      </div>
-    );
-  }
-
-  const initials = userProfile?.first_name && userProfile?.last_name
-    ? `${userProfile.first_name[0]}${userProfile.last_name[0]}`
-    : userProfile?.email.slice(0, 2).toUpperCase() || "U";
-
-  const email = userProfile?.email || "";
+  const email = user?.emailAddresses[0]?.emailAddress || "";
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">Profile Picture</CardTitle>
@@ -106,8 +55,8 @@ export default function ProfileSettingsPage() {
         </CardHeader>
         <CardContent className="flex items-center gap-4">
           <Avatar className="h-20 w-20 border-2 border-border">
-            <AvatarImage src={userProfile?.image_url} />
-            <AvatarFallback className="bg-[hsl(var(--accent-purple))] text-xl text-white">
+            <AvatarImage src={user?.imageUrl} />
+            <AvatarFallback className="bg-[hsl(var(--brand-flame))] text-xl text-white">
               {initials}
             </AvatarFallback>
           </Avatar>
@@ -160,30 +109,27 @@ export default function ProfileSettingsPage() {
           <CardDescription>Used for displaying timestamps</CardDescription>
         </CardHeader>
         <CardContent>
-          <Select value={timezone} onValueChange={setTimezone}>
-            <SelectTrigger className="max-w-md">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
+          <AnimatedSelect value={timezone} onValueChange={setTimezone}>
+            <AnimatedSelectTrigger className="max-w-md">
+              <AnimatedSelectValue />
+            </AnimatedSelectTrigger>
+            <AnimatedSelectContent>
               {timezones.map((tz) => (
-                <SelectItem key={tz.value} value={tz.value}>
+                <AnimatedSelectItem key={tz.value} value={tz.value}>
                   {tz.label}
-                </SelectItem>
+                </AnimatedSelectItem>
               ))}
-            </SelectContent>
-          </Select>
+            </AnimatedSelectContent>
+          </AnimatedSelect>
         </CardContent>
       </Card>
 
       <div className="flex justify-end">
-        <Button
-          onClick={handleSaveChanges}
-          disabled={isSavingProfile}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          {isSavingProfile ? "Saving..." : "Save Changes"}
+        <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+          Save Changes
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
+

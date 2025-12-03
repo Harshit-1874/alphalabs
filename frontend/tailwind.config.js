@@ -6,6 +6,14 @@ module.exports = {
     "./components/**/*.{js,ts,jsx,tsx}"
   ],
   theme: {
+  	screens: {
+  		'xs': '480px',
+  		'sm': '640px',
+  		'md': '768px',
+  		'lg': '1024px',
+  		'xl': '1280px',
+  		'2xl': '1536px',
+  	},
   	extend: {
   		borderRadius: {
   			lg: 'var(--radius)',
@@ -46,6 +54,17 @@ module.exports = {
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
+  			// Brand colors - AlphaLabs LD2 Palette
+  			brand: {
+  				flame: 'hsl(var(--brand-flame))',
+  				lavender: 'hsl(var(--brand-lavender))',
+  				cream: 'hsl(var(--brand-cream))'
+  			},
+  			// Semantic trading colors
+  			profit: 'hsl(var(--accent-profit))',
+  			loss: 'hsl(var(--accent-red))',
+  			warning: 'hsl(var(--accent-amber))',
+  			info: 'hsl(var(--accent-blue))',
   			chart: {
   				'1': 'hsl(var(--chart-1))',
   				'2': 'hsl(var(--chart-2))',

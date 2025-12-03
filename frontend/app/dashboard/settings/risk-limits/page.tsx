@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSettings } from "@/hooks/use-settings";
+import { useState } from "react";
+import { motion } from "motion/react";
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 
 export default function RiskLimitsSettingsPage() {
-  const { settings, updateSettings, isSaving } = useSettings();
   const [limits, setLimits] = useState({
     maxPositionSize: 50,
     maxLeverage: 5,
@@ -19,20 +18,13 @@ export default function RiskLimitsSettingsPage() {
     maxTotalDrawdown: 20,
   });
 
-  useEffect(() => {
-    if (settings) {
-      setLimits({
-        maxPositionSize: settings.max_position_size_pct,
-        maxLeverage: settings.max_leverage,
-        maxLossPerTrade: settings.max_loss_per_trade_pct,
-        maxDailyLoss: settings.max_daily_loss_pct,
-        maxTotalDrawdown: settings.max_total_drawdown_pct,
-      });
-    }
-  }, [settings]);
-
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-[hsl(var(--accent-amber)/0.3)] bg-[hsl(var(--accent-amber)/0.05)]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -159,23 +151,11 @@ export default function RiskLimitsSettingsPage() {
 
       <div className="flex justify-between">
         <Button variant="outline">Reset to Defaults</Button>
-        <Button
-          onClick={async () => {
-            await updateSettings({
-              max_position_size_pct: limits.maxPositionSize,
-              max_leverage: limits.maxLeverage,
-              max_loss_per_trade_pct: limits.maxLossPerTrade,
-              max_daily_loss_pct: limits.maxDailyLoss,
-              max_total_drawdown_pct: limits.maxTotalDrawdown,
-            });
-          }}
-          disabled={isSaving}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          {isSaving ? "Saving..." : "Save Risk Limits"}
+        <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+          Save Risk Limits
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -21,12 +21,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AnimatedDropdown,
+  AnimatedDropdownContent,
+  AnimatedDropdownItem,
+  AnimatedDropdownSeparator,
+  AnimatedDropdownTrigger,
+} from "@/components/ui/animated-dropdown";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import type { TestResult } from "@/types/result";
@@ -97,32 +97,32 @@ export function ShareResult({ result, agentName, variant = "button" }: ShareResu
 
   if (variant === "dropdown") {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <AnimatedDropdown>
+        <AnimatedDropdownTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
             <Share2 className="h-4 w-4" />
             Share
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={shareToTwitter}>
+        </AnimatedDropdownTrigger>
+        <AnimatedDropdownContent align="end" className="w-48">
+          <AnimatedDropdownItem onSelect={shareToTwitter}>
             <Twitter className="mr-2 h-4 w-4" />
             Twitter / X
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={shareToLinkedIn}>
+          </AnimatedDropdownItem>
+          <AnimatedDropdownItem onSelect={shareToLinkedIn}>
             <Linkedin className="mr-2 h-4 w-4" />
             LinkedIn
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={shareToTelegram}>
+          </AnimatedDropdownItem>
+          <AnimatedDropdownItem onSelect={shareToTelegram}>
             <Send className="mr-2 h-4 w-4" />
             Telegram
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={shareToWhatsApp}>
+          </AnimatedDropdownItem>
+          <AnimatedDropdownItem onSelect={shareToWhatsApp}>
             <MessageCircle className="mr-2 h-4 w-4" />
             WhatsApp
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={copyLink}>
+          </AnimatedDropdownItem>
+          <AnimatedDropdownSeparator />
+          <AnimatedDropdownItem onSelect={copyLink}>
             {copied ? (
               <>
                 <Check className="mr-2 h-4 w-4 text-[hsl(var(--accent-green))]" />
@@ -134,9 +134,9 @@ export function ShareResult({ result, agentName, variant = "button" }: ShareResu
                 Copy Link
               </>
             )}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </AnimatedDropdownItem>
+        </AnimatedDropdownContent>
+      </AnimatedDropdown>
     );
   }
 

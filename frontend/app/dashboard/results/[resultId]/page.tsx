@@ -1,4 +1,5 @@
 import { ResultDetail } from "@/components/results/result-detail";
+import { PageTransition } from "@/components/ui/page-transition";
 
 interface Props {
   params: Promise<{ resultId: string }>;
@@ -7,6 +8,10 @@ interface Props {
 export default async function ResultDetailPage({ params }: Props) {
   const { resultId } = await params;
   
-  return <ResultDetail resultId={resultId} />;
+  return (
+    <PageTransition>
+      <ResultDetail resultId={resultId} />
+    </PageTransition>
+  );
 }
 

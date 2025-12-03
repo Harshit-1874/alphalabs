@@ -8,12 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { cn } from "@/lib/utils";
 import type { AgentFormData, StepModelApiProps } from "@/types/agent";
 import { useApiKeys } from "@/hooks/use-api-keys";
@@ -83,31 +83,31 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
         <Label className="text-sm font-medium">
           Select AI Model <span className="text-destructive">*</span>
         </Label>
-        <Select
+        <AnimatedSelect
           value={formData.model}
           onValueChange={(value) => updateFormData({ model: value })}
         >
-          <SelectTrigger className="w-full h-10">
-            <SelectValue placeholder="Select a model...">
-              {selectedModel && (
-                <span className="flex items-center gap-2">
-                  <selectedModel.icon size={18} weight="duotone" className="text-primary" />
-                  <span>{selectedModel.name}</span>
-                </span>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
+          <AnimatedSelectTrigger className="w-full h-10">
+            {selectedModel ? (
+              <span className="flex items-center gap-2">
+                <selectedModel.icon size={18} weight="duotone" className="text-primary" />
+                <span>{selectedModel.name}</span>
+              </span>
+            ) : (
+              <AnimatedSelectValue placeholder="Select a model..." />
+            )}
+          </AnimatedSelectTrigger>
+          <AnimatedSelectContent>
             {models.map((model) => (
-              <SelectItem key={model.id} value={model.id} className="py-3">
+              <AnimatedSelectItem key={model.id} value={model.id} className="py-3">
                 <div className="flex items-center gap-2">
                   <model.icon size={18} weight="duotone" className="text-primary" />
                   <span className="font-medium">{model.name}</span>
                 </div>
-              </SelectItem>
+              </AnimatedSelectItem>
             ))}
-          </SelectContent>
-        </Select>
+          </AnimatedSelectContent>
+        </AnimatedSelect>
       </div>
 
       {/* Selected Model Info */}

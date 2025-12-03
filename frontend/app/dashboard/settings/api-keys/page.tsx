@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Key, Plus, Eye, EyeOff, RefreshCw, Edit, Trash2, ExternalLink, Check, AlertCircle, Loader2 } from "lucide-react";
+import { motion } from "motion/react";
+import { Key, Plus, Eye, EyeOff, RefreshCw, Edit, Trash2, ExternalLink, Check, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,125 +18,68 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { useApiKeys, type ApiKeyCreate } from "@/hooks/use-api-keys";
-import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+
+type ApiKeyStatus = "valid" | "untested" | "invalid";
+
+interface ApiKey {
+  id: string;
+  provider: string;
+  label: string;
+  maskedKey: string;
+  addedAt: Date;
+  lastUsed: string | null;
+  usedBy: string[];
+  status: ApiKeyStatus;
+  isDefault: boolean;
+}
+
+// Mock saved API keys
+const mockApiKeys: ApiKey[] = [
+  {
+    id: "1",
+    provider: "OpenRouter",
+    label: "Default",
+    maskedKey: "sk-or-v1-G«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«Û",
+    addedAt: new Date("2025-11-15"),
+    lastUsed: "2 hours ago",
+    usedBy: ["+¶-prime", "+¶-2"],
+    status: "valid",
+    isDefault: true,
+  },
+  {
+    id: "2",
+    provider: "OpenRouter",
+    label: "Secondary",
+    maskedKey: "sk-or-v1-G«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«Û",
+    addedAt: new Date("2025-11-20"),
+    lastUsed: null,
+    usedBy: [],
+    status: "untested",
+    isDefault: false,
+  },
+];
 
 export default function ApiKeysSettingsPage() {
-  const { apiKeys, isLoading, error, createApiKey, validateApiKey, deleteApiKey, refetch } = useApiKeys();
-  const { toast } = useToast();
-
+  const [keys, setKeys] = useState<ApiKey[]>(mockApiKeys);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [newKey, setNewKey] = useState<ApiKeyCreate>({
-    provider: "openrouter",
-    label: "",
-    api_key: "",
-    set_as_default: false
-  });
+  const [newKey, setNewKey] = useState({ provider: "openrouter", label: "", key: "", setDefault: false });
   const [showKey, setShowKey] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [validatingKeyId, setValidatingKeyId] = useState<string | null>(null);
-  const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
-  const [keyToDelete, setKeyToDelete] = useState<string | null>(null);
-
-  const handleSaveApiKey = async () => {
-    if (!newKey.api_key.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter an API key",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await createApiKey(newKey);
-      toast({
-        title: "Success",
-        description: "API key saved successfully",
-      });
-      setShowAddDialog(false);
-      setNewKey({ provider: "openrouter", label: "", api_key: "", set_as_default: false });
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to save API key",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleValidateKey = async (id: string) => {
-    setValidatingKeyId(id);
-    try {
-      const result = await validateApiKey(id);
-      if (result.valid) {
-        toast({
-          title: "Valid API Key",
-          description: `Key is valid. ${result.models_available?.length || 0} models available.`,
-        });
-      } else {
-        toast({
-          title: "Invalid API Key",
-          description: result.error || "The API key is invalid",
-          variant: "destructive",
-        });
-      }
-    } catch (err) {
-      toast({
-        title: "Validation Failed",
-        description: err instanceof Error ? err.message : "Failed to validate API key",
-        variant: "destructive",
-      });
-    } finally {
-      setValidatingKeyId(null);
-    }
-  };
-
-  const handleDeleteKey = async () => {
-    if (!keyToDelete) return;
-
-    setDeletingKeyId(keyToDelete);
-    try {
-      await deleteApiKey(keyToDelete);
-      toast({
-        title: "Success",
-        description: "API key deleted successfully",
-      });
-      setKeyToDelete(null);
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to delete API key",
-        variant: "destructive",
-      });
-    } finally {
-      setDeletingKeyId(null);
-    }
-  };
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">API Key Security</CardTitle>
@@ -170,20 +114,20 @@ export default function ApiKeysSettingsPage() {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>Provider</Label>
-                  <Select
+                  <AnimatedSelect
                     value={newKey.provider}
                     onValueChange={(value) => setNewKey({ ...newKey, provider: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="anthropic" disabled>
+                    <AnimatedSelectTrigger>
+                      <AnimatedSelectValue />
+                    </AnimatedSelectTrigger>
+                    <AnimatedSelectContent>
+                      <AnimatedSelectItem value="openrouter">OpenRouter</AnimatedSelectItem>
+                      <AnimatedSelectItem value="anthropic" disabled>
                         Anthropic (Coming soon)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                      </AnimatedSelectItem>
+                    </AnimatedSelectContent>
+                  </AnimatedSelect>
                 </div>
                 <div className="space-y-2">
                   <Label>Label (Optional)</Label>
@@ -201,8 +145,8 @@ export default function ApiKeysSettingsPage() {
                   <Input
                     type="password"
                     placeholder="sk-or-v1-..."
-                    value={newKey.api_key}
-                    onChange={(e) => setNewKey({ ...newKey, api_key: e.target.value })}
+                    value={newKey.key}
+                    onChange={(e) => setNewKey({ ...newKey, key: e.target.value })}
                   />
                   <a
                     href="https://openrouter.ai/keys"
@@ -217,9 +161,9 @@ export default function ApiKeysSettingsPage() {
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="setDefault"
-                    checked={newKey.set_as_default}
+                    checked={newKey.setDefault}
                     onCheckedChange={(checked) =>
-                      setNewKey({ ...newKey, set_as_default: checked as boolean })
+                      setNewKey({ ...newKey, setDefault: checked as boolean })
                     }
                   />
                   <Label htmlFor="setDefault" className="text-sm">
@@ -228,120 +172,90 @@ export default function ApiKeysSettingsPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowAddDialog(false)} disabled={isSaving}>
+                <Button variant="outline" onClick={() => setShowAddDialog(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleSaveApiKey} disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Save API Key
-                </Button>
+                <Button onClick={() => setShowAddDialog(false)}>Save API Key</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : error ? (
-            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
-              <p className="text-sm text-destructive">{error}</p>
-              <Button variant="outline" size="sm" onClick={refetch} className="mt-2">
-                Retry
-              </Button>
-            </div>
-          ) : apiKeys.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border/50 bg-muted/20 p-8 text-center">
-              <Key className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-sm font-medium">No API keys yet</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Add your first API key to start using AI models
-              </p>
-            </div>
-          ) : (
-            apiKeys.map((apiKey) => (
-              <div
-                key={apiKey.id}
-                className="rounded-lg border border-border/50 bg-muted/20 p-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{apiKey.provider}</span>
-                      {apiKey.label && (
-                        <span className="text-sm text-muted-foreground">({apiKey.label})</span>
-                      )}
-                      {apiKey.is_default && (
-                        <Badge variant="secondary" className="text-xs">
-                          Default
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 font-mono text-sm text-muted-foreground">
-                      {apiKey.key_prefix}
-                    </div>
+          {keys.map((apiKey) => (
+            <div
+              key={apiKey.id}
+              className="rounded-lg border border-border/50 bg-muted/20 p-4"
+            >
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{apiKey.provider}</span>
+                    {apiKey.isDefault && (
+                      <Badge variant="secondary" className="text-xs">
+                        Default
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 font-mono text-sm text-muted-foreground">
+                    {showKey === apiKey.id ? "sk-or-v1-actual-key-here" : apiKey.maskedKey}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Added: {apiKey.addedAt.toLocaleDateString()} G«Û Last used:{" "}
+                    {apiKey.lastUsed || "Never"}
+                  </p>
+                  {apiKey.usedBy.length > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Added: {new Date(apiKey.created_at).toLocaleDateString()} ‚Ä¢ Last used:{" "}
-                      {apiKey.last_used_at ? new Date(apiKey.last_used_at).toLocaleDateString() : "Never"}
+                      Used by: {apiKey.usedBy.join(", ")}
                     </p>
-                    {apiKey.used_by && apiKey.used_by.length > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Used by: {apiKey.used_by.join(", ")}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-xs",
-                        apiKey.status === "valid" &&
-                        "border-[hsl(var(--accent-green)/0.3)] text-[hsl(var(--accent-green))]",
-                        apiKey.status === "invalid" &&
-                        "border-[hsl(var(--accent-red)/0.3)] text-[hsl(var(--accent-red))]",
-                        apiKey.status === "untested" &&
-                        "border-[hsl(var(--accent-amber)/0.3)] text-[hsl(var(--accent-amber))]"
-                      )}
-                    >
-                      {apiKey.status === "valid" && <Check className="mr-1 h-3 w-3" />}
-                      {apiKey.status === "untested" && <AlertCircle className="mr-1 h-3 w-3" />}
-                      {apiKey.status.charAt(0).toUpperCase() + apiKey.status.slice(1)}
-                    </Badge>
-                  </div>
+                  )}
                 </div>
-                <div className="mt-3 flex items-center gap-2 border-t border-border/50 pt-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleValidateKey(apiKey.id)}
-                    disabled={validatingKeyId === apiKey.id}
-                  >
-                    {validatingKeyId === apiKey.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="mr-2 h-4 w-4" />
+                <div className="flex items-center gap-1">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-xs",
+                      apiKey.status === "valid" &&
+                        "border-[hsl(var(--accent-green)/0.3)] text-[hsl(var(--accent-green))]",
+                      apiKey.status === "invalid" &&
+                        "border-[hsl(var(--accent-red)/0.3)] text-[hsl(var(--accent-red))]",
+                      apiKey.status === "untested" &&
+                        "border-[hsl(var(--accent-amber)/0.3)] text-[hsl(var(--accent-amber))]"
                     )}
-                    Test
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setKeyToDelete(apiKey.id)}
-                    disabled={deletingKeyId === apiKey.id}
                   >
-                    {deletingKeyId === apiKey.id ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-2 h-4 w-4" />
-                    )}
-                    Delete
-                  </Button>
+                    {apiKey.status === "valid" && <Check className="mr-1 h-3 w-3" />}
+                    {apiKey.status === "untested" && <AlertCircle className="mr-1 h-3 w-3" />}
+                    {apiKey.status.charAt(0).toUpperCase() + apiKey.status.slice(1)}
+                  </Badge>
                 </div>
               </div>
-            ))
-          )}
+              <div className="mt-3 flex items-center gap-2 border-t border-border/50 pt-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowKey(showKey === apiKey.id ? null : apiKey.id)}
+                >
+                  {showKey === apiKey.id ? (
+                    <EyeOff className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Eye className="mr-2 h-4 w-4" />
+                  )}
+                  {showKey === apiKey.id ? "Hide" : "Reveal"}
+                </Button>
+                <Button variant="ghost" size="sm">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Test
+                </Button>
+                <Button variant="ghost" size="sm">
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
@@ -364,7 +278,7 @@ export default function ApiKeysSettingsPage() {
               <div className="flex items-center justify-between">
                 <span className="font-medium">Direct API</span>
                 <Button variant="link" size="sm" className="h-auto p-0">
-                  Setup ‚Üí
+                  Setup GÂ∆
                 </Button>
               </div>
             </div>
@@ -377,33 +291,7 @@ export default function ApiKeysSettingsPage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!keyToDelete} onOpenChange={() => setKeyToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete API Key?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this API key? This action cannot be undone.
-              {keyToDelete && apiKeys.find(k => k.id === keyToDelete)?.used_by?.length! > 0 && (
-                <span className="mt-2 block font-medium text-destructive">
-                  Warning: This key is currently used by agents: {apiKeys.find(k => k.id === keyToDelete)?.used_by?.join(", ")}
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteKey}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+    </motion.div>
   );
 }
 

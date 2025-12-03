@@ -366,6 +366,9 @@ export const DUMMY_TRADES: Trade[] = [
     entryTime: new Date("2025-11-25T10:00:00"),
     exitTime: new Date("2025-11-25T14:30:00"),
     reasoning: "RSI oversold, MACD bullish crossover",
+    confidence: 87,
+    stopLoss: 41520,
+    takeProfit: 43410,
   },
   {
     id: "trade-2",
@@ -378,6 +381,9 @@ export const DUMMY_TRADES: Trade[] = [
     entryTime: new Date("2025-11-25T16:00:00"),
     exitTime: new Date("2025-11-25T18:00:00"),
     reasoning: "RSI overbought, but stop loss hit",
+    confidence: 82,
+    stopLoss: 44800,
+    takeProfit: 42400,
   },
   {
     id: "trade-3",
@@ -390,6 +396,9 @@ export const DUMMY_TRADES: Trade[] = [
     entryTime: new Date("2025-11-26T09:00:00"),
     exitTime: new Date("2025-11-26T15:00:00"),
     reasoning: "Strong support bounce with volume confirmation",
+    confidence: 91,
+    stopLoss: 42000,
+    takeProfit: 45360,
   },
 ];
 
