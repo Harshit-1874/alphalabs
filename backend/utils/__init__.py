@@ -3,5 +3,9 @@ Utilities Package.
 
 Purpose:
     Utility functions for encryption, validation, formatting,
-    and other common operations.
+    storage operations, and other common operations.
 """
+
+from .storage import StorageClient
+
+__all__ = ['StorageClient']

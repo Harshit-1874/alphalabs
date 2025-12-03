@@ -28,6 +28,9 @@ from models.result import TestResult, Certificate
 # Activity domain models
 from models.activity import Notification, ActivityLog, MarketDataCache
 
+# Export domain models
+from models.export import Export
+
 
 __all__ = [
     # Base classes
@@ -56,4 +59,7 @@ __all__ = [
     "Notification",
     "ActivityLog",
     "MarketDataCache",
+    
+    # Export models
+    "Export",
 ]

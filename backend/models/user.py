@@ -159,6 +159,12 @@ class User(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan"
     )
     
+    exports: Mapped[List["Export"]] = relationship(
+        "Export",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email}, plan={self.plan})>"
 

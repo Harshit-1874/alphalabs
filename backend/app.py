@@ -11,7 +11,7 @@ Data Flow:
     - Outgoing: HTTP responses back to the client.
     - Integration: Connects to Supabase/PostgreSQL and external APIs (OpenRouter, Clerk).
 """
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Depends, Header, Request, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -22,9 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from database import get_supabase_client, get_db, validate_database_connection, validate_database_schema
-from api import users, api_keys, agents, arena, data, results
+from api import users, api_keys, agents, arena, data, results, certificates, notifications, dashboard, export
 from auth import verify_clerk_token, get_user_id_from_token
 from webhooks import verify_webhook_signature, handle_user_created, handle_user_updated, handle_user_deleted
+from websocket.handlers import handle_backtest_websocket, handle_forward_websocket
 from models import User
 import logging
 
@@ -133,6 +134,37 @@ app.include_router(agents.router)
 app.include_router(arena.router)
 app.include_router(data.router)
 app.include_router(results.router)
+app.include_router(certificates.router)
+app.include_router(notifications.router)
+app.include_router(dashboard.router)
+app.include_router(export.router)
+
+# WebSocket Routes
+@app.websocket("/ws/backtest/{session_id}")
+async def websocket_backtest_endpoint(websocket: WebSocket, session_id: str, token: str = Query(None)):
+    """
+    WebSocket endpoint for backtest session real-time updates.
+    
+    Args:
+        websocket: WebSocket connection
+        session_id: Backtest session ID
+        token: JWT authentication token (query parameter)
+    """
+    await handle_backtest_websocket(websocket, session_id, token)
+
+
+@app.websocket("/ws/forward/{session_id}")
+async def websocket_forward_endpoint(websocket: WebSocket, session_id: str, token: str = Query(None)):
+    """
+    WebSocket endpoint for forward test session real-time updates.
+    
+    Args:
+        websocket: WebSocket connection
+        session_id: Forward test session ID
+        token: JWT authentication token (query parameter)
+    """
+    await handle_forward_websocket(websocket, session_id, token)
+
 
 @app.get('/api/health')
 def health():

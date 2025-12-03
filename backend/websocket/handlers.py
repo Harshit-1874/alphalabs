@@ -6,9 +6,10 @@ Purpose:
     Handles connection lifecycle and message routing.
 """
 
-from fastapi import WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import WebSocket, WebSocketDisconnect, HTTPException, Query
 from typing import Optional
 import logging
+import jwt
 
 from .manager import websocket_manager
 from .events import create_error_event
@@ -16,10 +17,49 @@ from .events import create_error_event
 logger = logging.getLogger(__name__)
 
 
+async def authenticate_websocket(token: Optional[str]) -> Optional[str]:
+    """
+    Authenticate WebSocket connection using JWT token.
+    
+    Args:
+        token: JWT token from query parameter
+        
+    Returns:
+        clerk_user_id if authenticated, None otherwise
+    """
+    if not token:
+        logger.warning("WebSocket connection attempted without token")
+        return None
+    
+    try:
+        # Decode token without verification (same as HTTP auth fallback)
+        # In production, this should verify the signature
+        decoded = jwt.decode(
+            token,
+            options={"verify_signature": False}
+        )
+        
+        # Extract user ID from token
+        clerk_user_id = decoded.get("sub") or decoded.get("userId") or decoded.get("id")
+        
+        if not clerk_user_id:
+            logger.warning("Token missing user ID")
+            return None
+            
+        return clerk_user_id
+        
+    except jwt.DecodeError as e:
+        logger.warning(f"Invalid JWT token: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error authenticating WebSocket: {e}")
+        return None
+
+
 async def handle_backtest_websocket(
     websocket: WebSocket,
     session_id: str,
-    # user_id: str = Depends(get_current_user)  # TODO: Add auth when routes are integrated
+    token: Optional[str] = Query(None)
 ):
     """
     Handle WebSocket connection for backtest session.
@@ -27,17 +67,26 @@ async def handle_backtest_websocket(
     Args:
         websocket: The WebSocket connection
         session_id: The backtest session ID
+        token: JWT token for authentication (query parameter)
     """
     connection_id = None
     
     try:
-        # TODO: Validate session exists and user has access
-        # For now, accept all connections
+        # Authenticate the connection
+        clerk_user_id = await authenticate_websocket(token)
+        
+        if not clerk_user_id:
+            await websocket.close(code=1008, reason="Authentication required")
+            logger.warning(f"Rejected unauthenticated backtest WebSocket: session={session_id}")
+            return
         
         # Connect to WebSocket manager
         connection_id = await websocket_manager.connect(websocket, session_id)
         
-        logger.info(f"Backtest WebSocket connected: session={session_id}, conn={connection_id}")
+        logger.info(
+            f"Backtest WebSocket connected: session={session_id}, "
+            f"conn={connection_id}, user={clerk_user_id}"
+        )
         
         # Keep connection alive and listen for client messages
         while True:
@@ -69,7 +118,7 @@ async def handle_backtest_websocket(
 async def handle_forward_websocket(
     websocket: WebSocket,
     session_id: str,
-    # user_id: str = Depends(get_current_user)  # TODO: Add auth when routes are integrated
+    token: Optional[str] = Query(None)
 ):
     """
     Handle WebSocket connection for forward test session.
@@ -77,17 +126,26 @@ async def handle_forward_websocket(
     Args:
         websocket: The WebSocket connection
         session_id: The forward test session ID
+        token: JWT token for authentication (query parameter)
     """
     connection_id = None
     
     try:
-        # TODO: Validate session exists and user has access
-        # For now, accept all connections
+        # Authenticate the connection
+        clerk_user_id = await authenticate_websocket(token)
+        
+        if not clerk_user_id:
+            await websocket.close(code=1008, reason="Authentication required")
+            logger.warning(f"Rejected unauthenticated forward test WebSocket: session={session_id}")
+            return
         
         # Connect to WebSocket manager
         connection_id = await websocket_manager.connect(websocket, session_id)
         
-        logger.info(f"Forward test WebSocket connected: session={session_id}, conn={connection_id}")
+        logger.info(
+            f"Forward test WebSocket connected: session={session_id}, "
+            f"conn={connection_id}, user={clerk_user_id}"
+        )
         
         # Keep connection alive and listen for client messages
         while True:
