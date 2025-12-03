@@ -28,12 +28,14 @@ Usage:
 """
 
 import logging
-from typing import Any
+from datetime import datetime
+from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.market_data_service import Candle
 from services.ai_trader import AIDecision
+from services.trading.position_manager import Position
 from services.trading.backtest_engine.broadcaster import EventBroadcaster
 from services.trading.backtest_engine.position_handler import PositionHandler
 from services.trading.backtest_engine.database import DatabaseManager
@@ -176,7 +178,19 @@ class CandleProcessor:
         
         # Broadcast stats update
         stats = session_state.position_manager.get_stats()
+        self._record_equity_point(session_state, candle.timestamp, stats["current_equity"])
         await self.broadcaster.broadcast_stats_update(session_id, stats)
+
+        await self.database_manager.update_session_runtime_stats(
+            db=db,
+            session_id=session_id,
+            current_equity=stats["current_equity"],
+            current_pnl_pct=stats["equity_change_pct"],
+            max_drawdown_pct=session_state.max_drawdown_pct,
+            elapsed_seconds=self._compute_elapsed_seconds(session_state),
+            open_position=self._serialize_position(session_state.position_manager.get_position()),
+            current_candle=candle_index + 1,
+        )
     
     async def execute_decision(
         self,
@@ -254,3 +268,33 @@ class CandleProcessor:
                     candle.timestamp,
                     decision.reasoning
                 )
+
+    def _record_equity_point(self, session_state: Any, timestamp: datetime, equity: float) -> None:
+        point = {"time": timestamp.isoformat(), "value": equity}
+        if equity > session_state.peak_equity:
+            session_state.peak_equity = equity
+        drawdown = 0.0
+        if session_state.peak_equity:
+            drawdown = ((equity - session_state.peak_equity) / session_state.peak_equity) * 100
+        session_state.max_drawdown_pct = min(session_state.max_drawdown_pct, drawdown)
+        point["drawdown"] = drawdown
+        session_state.equity_curve.append(point)
+
+    def _serialize_position(self, position: Optional[Position]) -> Optional[dict]:
+        if not position:
+            return None
+        return {
+            "type": position.action,
+            "entry_price": position.entry_price,
+            "size": position.size,
+            "stop_loss": position.stop_loss,
+            "take_profit": position.take_profit,
+            "entry_time": position.entry_time.isoformat(),
+            "leverage": position.leverage,
+            "unrealized_pnl": position.unrealized_pnl,
+        }
+
+    def _compute_elapsed_seconds(self, session_state: Any) -> int:
+        if not session_state.started_at:
+            return 0
+        return int((datetime.utcnow() - session_state.started_at).total_seconds())

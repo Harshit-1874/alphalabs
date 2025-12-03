@@ -20,7 +20,7 @@ Usage:
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
@@ -117,6 +117,39 @@ class DatabaseManager:
         await db.execute(stmt)
         await db.commit()
         self.logger.debug(f"Updated session {session_id} completed_at to {completed_at}")
+    
+    async def update_session_runtime_stats(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        *,
+        current_equity: float,
+        current_pnl_pct: float,
+        max_drawdown_pct: Optional[float] = None,
+        elapsed_seconds: Optional[int] = None,
+        open_position: Optional[dict] = None,
+    ) -> None:
+        """
+        Persist runtime statistics for a forward session.
+        """
+        values = {
+            "current_equity": Decimal(str(current_equity)),
+            "current_pnl_pct": Decimal(str(current_pnl_pct)),
+        }
+        if max_drawdown_pct is not None:
+            values["max_drawdown_pct"] = Decimal(str(max_drawdown_pct))
+        if elapsed_seconds is not None:
+            values["elapsed_seconds"] = elapsed_seconds
+        if open_position is not None:
+            values["open_position"] = open_position
+        
+        stmt = (
+            update(TestSession)
+            .where(TestSession.id == session_id)
+            .values(**values)
+        )
+        await db.execute(stmt)
+        await db.commit()
     
     async def update_session_final_stats(
         self,

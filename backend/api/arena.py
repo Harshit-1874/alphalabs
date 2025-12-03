@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from decimal import Decimal
+from typing import Optional, Tuple
 from uuid import UUID
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -14,11 +15,41 @@ from schemas.arena_schemas import (
 )
 from models.agent import Agent
 from models.arena import TestSession
+from models.result import TestResult
 from services.trading.backtest_engine import BacktestEngine
 from websocket.manager import websocket_manager
 from api.users import get_current_user
 
 router = APIRouter(prefix="/api/arena", tags=["arena"])
+
+# Historical presets (UTC)
+_DATE_PRESET_MAP = {
+    "bull": (datetime(2023, 10, 1), datetime(2024, 3, 31)),
+    "crash": (datetime(2022, 11, 1), datetime(2023, 1, 31)),
+}
+
+
+def _resolve_date_preset(preset: str) -> Tuple[datetime, datetime]:
+    now = datetime.utcnow()
+    if preset == "7d":
+        return now - timedelta(days=7), now
+    if preset == "30d":
+        return now - timedelta(days=30), now
+    if preset == "90d":
+        return now - timedelta(days=90), now
+    if preset in _DATE_PRESET_MAP:
+        return _DATE_PRESET_MAP[preset]
+    return now - timedelta(days=30), now
+
+
+def _serialize_open_position(position) -> Optional[OpenPosition]:
+    if not position:
+        return None
+    return OpenPosition(
+        type=position.action,
+        entry_price=position.entry_price,
+        unrealized_pnl=position.unrealized_pnl
+    )
 
 # Singleton instance of BacktestEngine
 # Initialized lazily or on module load
@@ -59,19 +90,15 @@ async def start_backtest(
     end_date = request.end_date
     
     if request.date_preset and request.date_preset != 'custom':
-        end_date = datetime.now()
-        if request.date_preset == '7d':
-            start_date = end_date - timedelta(days=7)
-        elif request.date_preset == '30d':
-            start_date = end_date - timedelta(days=30)
-        elif request.date_preset == '90d':
-            start_date = end_date - timedelta(days=90)
-        # TODO: Implement 'bull' and 'crash' presets
-        else:
-            start_date = end_date - timedelta(days=30)
+        start_date, end_date = _resolve_date_preset(request.date_preset)
             
     if not start_date or not end_date:
         raise HTTPException(status_code=400, detail="Start and end dates required")
+    
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime):
+        end_date = end_date.date()
 
     # Create TestSession in DB
     test_session = TestSession(
@@ -84,7 +111,12 @@ async def start_backtest(
         timeframe=request.timeframe,
         start_date=start_date,
         end_date=end_date,
-        starting_capital=request.starting_capital,
+        starting_capital=Decimal(str(request.starting_capital)),
+        playback_speed=request.playback_speed,
+        date_preset=request.date_preset,
+        safety_mode=request.safety_mode,
+        allow_leverage=request.allow_leverage,
+        current_equity=Decimal(str(request.starting_capital)),
         created_at=datetime.utcnow()
     )
     db.add(test_session)
@@ -133,32 +165,29 @@ async def get_backtest_status(
     
     if session_state:
         # Return real-time state
-        pm = session_state.position_manager
-        current_equity = pm.get_total_equity()
-        pnl_pct = ((current_equity - pm.starting_capital) / pm.starting_capital) * 100
-        
-        open_pos = pm.get_position()
-        open_pos_data = None
-        if open_pos:
-            open_pos_data = OpenPosition(
-                type=open_pos.action,
-                entry_price=open_pos.entry_price,
-                unrealized_pnl=open_pos.unrealized_pnl
-            )
-            
+        stats = session_state.position_manager.get_stats()
+        current_equity = stats["current_equity"]
+        pnl_pct = stats["equity_change_pct"]
+        open_pos = session_state.position_manager.get_position()
+        open_pos_data = _serialize_open_position(open_pos)
+        elapsed_seconds = int((datetime.utcnow() - session_state.started_at).total_seconds()) if session_state.started_at else 0
+        progress_pct = (
+            (session_state.current_index / len(session_state.candles)) * 100
+            if session_state.candles else 0
+        )
         return {
             "session": {
                 "id": id,
                 "status": "running" if not session_state.is_paused else "paused",
                 "current_candle": session_state.current_index,
                 "total_candles": len(session_state.candles),
-                "progress_pct": (session_state.current_index / len(session_state.candles)) * 100,
-                "elapsed_seconds": 0, # TODO: Track elapsed time
+                "progress_pct": progress_pct,
+                "elapsed_seconds": elapsed_seconds,
                 "current_equity": current_equity,
                 "current_pnl_pct": pnl_pct,
-                "max_drawdown_pct": pm.max_drawdown_pct,
-                "trades_count": len(pm.get_closed_trades()),
-                "win_rate": pm.get_win_rate(),
+                "max_drawdown_pct": session_state.max_drawdown_pct,
+                "trades_count": stats["total_trades"],
+                "win_rate": stats["win_rate"],
                 "open_position": open_pos_data
             }
         }
@@ -172,20 +201,56 @@ async def get_backtest_status(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
         
+    result_stmt = await db.execute(
+        select(TestResult).where(TestResult.session_id == session.id)
+    )
+    test_result = result_stmt.scalar_one_or_none()
+    
+    current_equity = float(session.current_equity or session.starting_capital)
+    pnl_pct = float(session.current_pnl_pct or 0)
+    max_drawdown_pct = float(session.max_drawdown_pct or 0)
+    trades_count = 0
+    win_rate = 0.0
+    if test_result:
+        current_equity = float(test_result.ending_capital)
+        pnl_pct = float(test_result.total_pnl_pct)
+        trades_count = test_result.total_trades
+        win_rate = float(test_result.win_rate or 0)
+        if test_result.max_drawdown_pct is not None:
+            max_drawdown_pct = float(test_result.max_drawdown_pct)
+    
+    open_position = None
+    if session.open_position:
+        open_position = OpenPosition(
+            type=session.open_position.get("type", "long"),
+            entry_price=session.open_position.get("entry_price", 0.0),
+            unrealized_pnl=session.open_position.get("unrealized_pnl", 0.0)
+        )
+    
+    progress_pct = 0.0
+    if session.total_candles:
+        progress_pct = min(100.0, (session.current_candle or 0) / session.total_candles * 100)
+    if session.status == "completed":
+        progress_pct = 100.0
+    
+    elapsed_seconds = session.elapsed_seconds or 0
+    if not elapsed_seconds and session.started_at and session.completed_at:
+        elapsed_seconds = int((session.completed_at - session.started_at).total_seconds())
+    
     return {
         "session": {
             "id": session.id,
             "status": session.status,
             "current_candle": session.current_candle or 0,
             "total_candles": session.total_candles or 0,
-            "progress_pct": 100 if session.status == "completed" else 0,
-            "elapsed_seconds": 0,
-            "current_equity": 0, # TODO: Store final equity in DB
-            "current_pnl_pct": 0, # TODO: Store final PnL in DB
-            "max_drawdown_pct": 0,
-            "trades_count": 0,
-            "win_rate": 0,
-            "open_position": None
+            "progress_pct": progress_pct,
+            "elapsed_seconds": elapsed_seconds,
+            "current_equity": current_equity,
+            "current_pnl_pct": pnl_pct,
+            "max_drawdown_pct": max_drawdown_pct,
+            "trades_count": trades_count,
+            "win_rate": win_rate,
+            "open_position": open_position
         }
     }
 
@@ -227,16 +292,25 @@ async def stop_backtest(
     id: UUID,
     request: StopRequest,
     current_user: dict = Depends(get_current_user),
-    engine: BacktestEngine = Depends(get_backtest_engine)
+    engine: BacktestEngine = Depends(get_backtest_engine),
+    db: AsyncSession = Depends(get_db)
 ):
     """Stop backtest."""
     try:
-        await engine.stop_backtest(str(id))
+        result_id = await engine.stop_backtest(str(id), close_position=request.close_position)
+        final_pnl = None
+        if result_id:
+            result_stmt = await db.execute(
+                select(TestResult).where(TestResult.id == result_id)
+            )
+            test_result = result_stmt.scalar_one_or_none()
+            if test_result:
+                final_pnl = float(test_result.total_pnl_pct)
         return {
             "session_id": id,
             "status": "completed",
-            "result_id": None, # TODO: Return result ID
-            "final_pnl": None
+            "result_id": result_id,
+            "final_pnl": final_pnl
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

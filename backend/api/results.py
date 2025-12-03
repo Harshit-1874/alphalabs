@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, and_
+from sqlalchemy import select, func, desc
+from sqlalchemy.orm import selectinload
 
 from database import get_db
 from schemas.result_schemas import (
@@ -11,8 +12,9 @@ from schemas.result_schemas import (
     TradeListResponse, ReasoningResponse, ResultListItem, Pagination,
     ResultStats, ResultStatsByType, ResultDetail, TradeSchema, AIThoughtSchema
 )
-from models.arena import TestSession, Trade, AiThought
+from models.arena import Trade, AiThought
 from models.agent import Agent
+from models.result import TestResult
 from api.users import get_current_user
 
 router = APIRouter(prefix="/api/results", tags=["results"])
@@ -28,65 +30,52 @@ async def list_results(
     current_user: dict = Depends(get_current_user)
 ):
     """List test results with pagination and filtering."""
-    # Build query
-    query = select(TestSession).where(
-        TestSession.user_id == current_user.id,
-        TestSession.status == "completed"
+    # Build base query
+    query = (
+        select(TestResult)
+        .where(TestResult.user_id == current_user.id)
+        .options(
+            selectinload(TestResult.agent),
+            selectinload(TestResult.certificate)
+        )
     )
     
     if type:
-        query = query.where(TestSession.type == type)
+        query = query.where(TestResult.type == type)
     if agent_id:
-        query = query.where(TestSession.agent_id == agent_id)
+        query = query.where(TestResult.agent_id == agent_id)
     if asset:
-        query = query.where(TestSession.asset == asset)
+        query = query.where(TestResult.asset == asset)
         
-    # Get total count
     count_query = select(func.count()).select_from(query.subquery())
     total = await db.scalar(count_query)
     
-    # Add sorting and pagination
-    query = query.order_by(desc(TestSession.created_at))
+    query = query.order_by(desc(TestResult.created_at))
     query = query.offset((page - 1) * limit).limit(limit)
     
-    # Execute query
     result = await db.execute(query)
-    sessions = result.scalars().all()
+    test_results = result.scalars().all()
     
-    # Fetch agent names
-    # Optimization: Could use join, but for now simple queries
-    items = []
-    for session in sessions:
-        agent_res = await db.execute(select(Agent).where(Agent.id == session.agent_id))
-        agent = agent_res.scalar_one_or_none()
-        agent_name = agent.name if agent else "Unknown Agent"
-        
-        # Calculate win rate and other stats if not stored
-        # Assuming they are stored or calculated on the fly
-        # For listing, we use basic info
-        
-        # Duration string
-        duration = "0s"
-        if session.started_at and session.completed_at:
-            diff = session.completed_at - session.started_at
-            duration = str(diff).split('.')[0]
-            
+    items: List[ResultListItem] = []
+    for res in test_results:
+        agent_name = res.agent.name if res.agent else "Unknown Agent"
+        duration = res.duration_display or ""
         items.append(ResultListItem(
-            id=session.id,
-            type=session.type,
-            agent_id=session.agent_id,
+            id=res.id,
+            type=res.type,
+            agent_id=res.agent_id,
             agent_name=agent_name,
-            asset=session.asset,
-            mode="standard", # TODO: Store mode in TestSession
-            created_at=session.created_at,
+            asset=res.asset,
+            mode=res.mode,
+            created_at=res.created_at,
             duration_display=duration,
-            total_trades=0, # TODO: Add to TestSession model or join
-            total_pnl_pct=float(session.current_pnl_pct or 0),
-            win_rate=0.0, # TODO: Add to TestSession model
-            max_drawdown_pct=0.0, # TODO: Add to TestSession model
-            sharpe_ratio=0.0,
-            is_profitable=(session.current_pnl_pct or 0) > 0,
-            has_certificate=False
+            total_trades=res.total_trades,
+            total_pnl_pct=float(res.total_pnl_pct or 0),
+            win_rate=float(res.win_rate or 0),
+            max_drawdown_pct=float(res.max_drawdown_pct or 0),
+            sharpe_ratio=float(res.sharpe_ratio or 0),
+            is_profitable=res.is_profitable,
+            has_certificate=bool(res.certificate)
         ))
         
     return {
@@ -105,16 +94,11 @@ async def get_result_stats(
     current_user: dict = Depends(get_current_user)
 ):
     """Get aggregate statistics for all results."""
-    # Base query
-    base_query = select(TestSession).where(
-        TestSession.user_id == current_user.id,
-        TestSession.status == "completed"
-    )
-    
+    base_query = select(TestResult).where(TestResult.user_id == current_user.id)
     result = await db.execute(base_query)
-    sessions = result.scalars().all()
+    results = result.scalars().all()
     
-    total_tests = len(sessions)
+    total_tests = len(results)
     if total_tests == 0:
         return {
             "stats": {
@@ -131,11 +115,18 @@ async def get_result_stats(
             }
         }
         
-    profitable_count = sum(1 for s in sessions if (s.current_pnl_pct or 0) > 0)
-    pnls = [float(s.current_pnl_pct or 0) for s in sessions]
+    profitable_count = sum(1 for r in results if r.is_profitable)
+    pnls = [float(r.total_pnl_pct or 0) for r in results]
     
-    backtest_sessions = [s for s in sessions if s.type == "backtest"]
-    forward_sessions = [s for s in sessions if s.type == "forward"]
+    by_type_data: Dict[str, Dict[str, int]] = {
+        "backtest": {"count": 0, "profitable": 0},
+        "forward": {"count": 0, "profitable": 0},
+    }
+    for r in results:
+        bucket = by_type_data[r.type]
+        bucket["count"] += 1
+        if r.is_profitable:
+            bucket["profitable"] += 1
     
     return {
         "stats": {
@@ -146,14 +137,8 @@ async def get_result_stats(
             "worst_result": min(pnls) if pnls else 0.0,
             "avg_pnl": sum(pnls) / total_tests if total_tests else 0.0,
             "by_type": {
-                "backtest": {
-                    "count": len(backtest_sessions),
-                    "profitable": sum(1 for s in backtest_sessions if (s.current_pnl_pct or 0) > 0)
-                },
-                "forward": {
-                    "count": len(forward_sessions),
-                    "profitable": sum(1 for s in forward_sessions if (s.current_pnl_pct or 0) > 0)
-                }
+                "backtest": by_type_data["backtest"],
+                "forward": by_type_data["forward"],
             }
         }
     }
@@ -165,22 +150,22 @@ async def get_result_detail(
     current_user: dict = Depends(get_current_user)
 ):
     """Get detailed result for a specific session."""
-    # Get session
     result = await db.execute(
-        select(TestSession).where(TestSession.id == id, TestSession.user_id == current_user.id)
+        select(TestResult)
+        .where(TestResult.id == id, TestResult.user_id == current_user.id)
+        .options(selectinload(TestResult.agent))
     )
-    session = result.scalar_one_or_none()
+    test_result = result.scalar_one_or_none()
     
-    if not session:
+    if not test_result:
         raise HTTPException(status_code=404, detail="Result not found")
         
     # Get agent
-    agent_res = await db.execute(select(Agent).where(Agent.id == session.agent_id))
-    agent = agent_res.scalar_one_or_none()
+    agent = test_result.agent
     
     # Get trades
     trades_res = await db.execute(
-        select(Trade).where(Trade.session_id == id).order_by(Trade.trade_number)
+        select(Trade).where(Trade.session_id == test_result.session_id).order_by(Trade.trade_number)
     )
     trades = trades_res.scalars().all()
     
@@ -207,24 +192,24 @@ async def get_result_detail(
     
     return {
         "result": {
-            "id": session.id,
-            "session_id": session.id,
-            "type": session.type,
-            "agent_id": session.agent_id,
+            "id": test_result.id,
+            "session_id": test_result.session_id,
+            "type": test_result.type,
+            "agent_id": test_result.agent_id,
             "agent_name": agent.name if agent else "Unknown",
             "model": agent.model if agent else "Unknown",
-            "asset": session.asset,
-            "mode": "standard", # TODO
-            "start_date": session.start_date,
-            "end_date": session.end_date or datetime.now(),
-            "starting_capital": float(session.starting_capital),
-            "ending_capital": float(session.current_equity or session.starting_capital),
-            "total_pnl_pct": float(session.current_pnl_pct or 0),
-            "total_trades": len(trades),
-            "win_rate": win_rate,
-            "max_drawdown_pct": 0.0, # TODO: Calculate from equity curve if available
-            "sharpe_ratio": 0.0, # TODO
-            "profit_factor": 0.0, # TODO
+            "asset": test_result.asset,
+            "mode": test_result.mode,
+            "start_date": test_result.start_date,
+            "end_date": test_result.end_date or datetime.now(),
+            "starting_capital": float(test_result.starting_capital),
+            "ending_capital": float(test_result.ending_capital),
+            "total_pnl_pct": float(test_result.total_pnl_pct),
+            "total_trades": test_result.total_trades,
+            "win_rate": float(test_result.win_rate or win_rate),
+            "max_drawdown_pct": float(test_result.max_drawdown_pct or 0),
+            "sharpe_ratio": float(test_result.sharpe_ratio or 0),
+            "profit_factor": float(test_result.profit_factor or 0),
             "trades": trade_schemas
         }
     }
@@ -236,16 +221,17 @@ async def get_result_trades(
     current_user: dict = Depends(get_current_user)
 ):
     """Get trades for a result."""
-    # Verify ownership
-    session_res = await db.execute(
-        select(TestSession).where(TestSession.id == id, TestSession.user_id == current_user.id)
+    # Verify ownership via result
+    result_res = await db.execute(
+        select(TestResult).where(TestResult.id == id, TestResult.user_id == current_user.id)
     )
-    if not session_res.scalar_one_or_none():
+    result_row = result_res.scalar_one_or_none()
+    if not result_row:
         raise HTTPException(status_code=404, detail="Result not found")
         
     # Get trades
     trades_res = await db.execute(
-        select(Trade).where(Trade.session_id == id).order_by(Trade.trade_number)
+        select(Trade).where(Trade.session_id == result_row.session_id).order_by(Trade.trade_number)
     )
     trades = trades_res.scalars().all()
     
@@ -273,16 +259,16 @@ async def get_result_reasoning(
     current_user: dict = Depends(get_current_user)
 ):
     """Get AI reasoning for a result."""
-    # Verify ownership
-    session_res = await db.execute(
-        select(TestSession).where(TestSession.id == id, TestSession.user_id == current_user.id)
+    result_res = await db.execute(
+        select(TestResult).where(TestResult.id == id, TestResult.user_id == current_user.id)
     )
-    if not session_res.scalar_one_or_none():
+    result_row = result_res.scalar_one_or_none()
+    if not result_row:
         raise HTTPException(status_code=404, detail="Result not found")
         
     # Get thoughts
     thoughts_res = await db.execute(
-        select(AiThought).where(AiThought.session_id == id).order_by(AiThought.candle_number)
+        select(AiThought).where(AiThought.session_id == result_row.session_id).order_by(AiThought.candle_number)
     )
     thoughts = thoughts_res.scalars().all()
     

@@ -9,6 +9,7 @@ indicator calculation, and AI trading components.
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Dict, List, Any
 
 from models.agent import Agent
@@ -49,6 +50,10 @@ class SessionState:
     is_stopped: bool = False
     pause_event: asyncio.Event = field(default=None)
     ai_thoughts: List[Dict[str, Any]] = field(default=None)
+    started_at: datetime = field(default=None)
+    equity_curve: List[Dict[str, Any]] = field(default=None)
+    peak_equity: float = 0.0
+    max_drawdown_pct: float = 0.0
     
     def __post_init__(self):
         """
@@ -63,3 +68,9 @@ class SessionState:
             self.pause_event.set()  # Start unpaused
         if self.ai_thoughts is None:
             self.ai_thoughts = []
+        if self.equity_curve is None:
+            self.equity_curve = []
+        if self.started_at is None:
+            self.started_at = datetime.utcnow()
+        if not self.peak_equity:
+            self.peak_equity = self.position_manager.starting_capital

@@ -45,6 +45,7 @@ from services.trading.backtest_engine.broadcaster import EventBroadcaster
 from services.trading.backtest_engine.position_handler import PositionHandler
 from services.trading.backtest_engine.database import DatabaseManager
 from services.trading.backtest_engine.processor import CandleProcessor
+from services.result_service import ResultService
 
 logger = logging.getLogger(__name__)
 
@@ -203,8 +204,10 @@ class BacktestEngine:
             
             # Update session status to running
             async with self.session_factory() as db:
+                started_at = datetime.utcnow()
+                session_state.started_at = started_at
                 await self.database_manager.update_session_status(db, session_id, "running")
-                await self.database_manager.update_session_started_at(db, session_id, datetime.utcnow())
+                await self.database_manager.update_session_started_at(db, session_id, started_at)
             
             # Broadcast session initialized event
             await self.broadcaster.broadcast_session_initialized(
@@ -504,20 +507,25 @@ class BacktestEngine:
         # Get final stats
         stats = session_state.position_manager.get_stats()
         
-        # Update session with final equity and PnL
-        await self.database_manager.update_session_final_stats(
+        await self.database_manager.save_ai_thoughts(db, session_id, session_state.ai_thoughts)
+        await self.database_manager.update_session_runtime_stats(
             db,
             session_id,
-            stats["current_equity"],
-            stats["equity_change_pct"]
+            current_equity=stats["current_equity"],
+            current_pnl_pct=stats["equity_change_pct"],
+            max_drawdown_pct=session_state.max_drawdown_pct,
+            elapsed_seconds=int((datetime.utcnow() - session_state.started_at).total_seconds()) if session_state.started_at else None,
+            open_position=None,
+            current_candle=session_state.current_index,
         )
         
-        # Save AI thoughts to database
-        await self.database_manager.save_ai_thoughts(db, session_id, session_state.ai_thoughts)
-        
-        # Generate result using ResultService (will be implemented in task 10)
-        # For now, we'll create a placeholder result_id
-        result_id = f"result_{session_id}"
+        result_service = ResultService(db)
+        result_id = await result_service.create_from_session(
+            session_id=session_id,
+            stats=stats,
+            equity_curve=session_state.equity_curve,
+            forced_stop=force_stop
+        )
         
         # Broadcast session completed event
         await self.broadcaster.broadcast_session_completed(
