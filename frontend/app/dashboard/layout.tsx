@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { SidebarProvider, SidebarInset, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { usePathname } from "next/navigation";
 import { useUIStore } from "@/lib/stores";
 import { GlobalDynamicIsland } from "@/components/ui/global-dynamic-island";
+import { DUMMY_DASHBOARD_STATS, DUMMY_RESULTS_STATS } from "@/lib/dummy-data";
+import { useDynamicIslandDemoRotation } from "@/lib/use-dynamic-island-demo-rotation";
 import type { AccentColor } from "@/types";
 
 // Accent color mappings to HSL values
@@ -73,6 +75,23 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const isDashboardRoot = pathname === "/dashboard";
+  const isBacktestConfig = pathname === "/dashboard/arena/backtest";
+  const isForwardConfig = pathname === "/dashboard/arena/forward";
+  
+  // Determine rotation context and preparing message:
+  // - Dashboard root: show dashboard rotation
+  // - Config pages: show static preparing message
+  // - Battle/Live pages: null (let battle-screen.tsx control the island)
+  const rotationContext = isDashboardRoot ? "dashboard" as const : null;
+  
+  const preparingConfig = useMemo(() => {
+    if (isBacktestConfig) return { type: "backtest" as const };
+    if (isForwardConfig) return { type: "forward" as const };
+    return undefined;
+  }, [isBacktestConfig, isForwardConfig]);
+  
+  useDynamicIslandDemoRotation(rotationContext, preparingConfig);
   
   // Get page title, defaulting to a capitalized version of the last path segment
   const getPageTitle = () => {
@@ -98,11 +117,18 @@ export default function DashboardLayout({
     return "Dashboard";
   };
 
+  // Use data from dummy-data.ts (tomorrow replace with real API calls)
+  const totalAgents = DUMMY_DASHBOARD_STATS.totalAgents;
+  const averageProfit = DUMMY_RESULTS_STATS.avgPnL;
+
   return (
     <SidebarProvider>
       <KeyboardShortcuts />
       <AccentColorProvider />
-      <GlobalDynamicIsland />
+      <GlobalDynamicIsland 
+        totalAgents={totalAgents}
+        averageProfit={averageProfit}
+      />
       <AppSidebar />
       <SidebarInset>
         {/* Top Header Bar */}

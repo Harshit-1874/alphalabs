@@ -316,7 +316,19 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   // Celebrate on completion if profitable
   useEffect(() => {
     if (progress >= 100 && pnl > 0) {
-      narrate(NARRATOR_MESSAGES.backtestComplete, "result");
+      const completionSummary = {
+        text: NARRATOR_MESSAGES.backtestComplete,
+        type: "result" as const,
+        details: `PnL ${pnl.toFixed(1)}% • Trades ${trades.length} • Win rate ${winRate}%`,
+        metrics: [
+          { label: "PnL", value: `${pnl.toFixed(1)}%` },
+          { label: "Trades", value: `${trades.length}` },
+          { label: "Win rate", value: `${winRate}%` },
+        ],
+      };
+
+      narrate(completionSummary.text, completionSummary.type, completionSummary);
+
       setTimeout(() => {
         celebrate({
           pnl,

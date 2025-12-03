@@ -18,6 +18,10 @@ export interface GlobalDynamicIslandProps {
   enableConfetti?: boolean;
   /** Confetti colors for profit celebration */
   confettiColors?: string[];
+  /** Total number of agents created by user (for idle stats) */
+  totalAgents?: number;
+  /** Average profit percentage across all trades (for idle stats) */
+  averageProfit?: number;
   /** Custom idle content */
   idleContent?: React.ReactNode;
   /** Custom render for narrator state */

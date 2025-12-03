@@ -6,4 +6,5 @@ export { AlphaContent } from "./alpha-content";
 export { CelebrationContent } from "./celebration-content";
 export { ConnectionContent } from "./connection-content";
 export { LiveSessionContent } from "./live-session-content";
+export { PreparingContent } from "./preparing-content";
 

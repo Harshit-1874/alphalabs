@@ -7,6 +7,7 @@ import type {
   ConnectionData,
   LiveSessionData,
   AnalyzingData,
+  PreparingData,
 } from "@/lib/stores/dynamic-island-store";
 import {
   IdleContent,
@@ -17,12 +18,15 @@ import {
   CelebrationContent,
   ConnectionContent,
   LiveSessionContent,
+  PreparingContent,
 } from "./content-renderers";
 
 export interface IslandContentProps {
   mode: IslandMode;
   data: unknown;
   isExpanded?: boolean;
+  totalAgents?: number;
+  averageProfit?: number;
   idleContent?: React.ReactNode;
   renderNarrator?: (data: NarratorData, isExpanded?: boolean) => React.ReactNode;
   renderTrade?: (data: TradeData, isExpanded?: boolean) => React.ReactNode;
@@ -40,6 +44,8 @@ export const IslandContent = ({
   mode,
   data,
   isExpanded,
+  totalAgents,
+  averageProfit,
   idleContent,
   renderNarrator,
   renderTrade,
@@ -51,7 +57,7 @@ export const IslandContent = ({
 }: IslandContentProps) => {
   switch (mode) {
     case "idle":
-      return idleContent || <IdleContent />;
+      return idleContent || <IdleContent totalAgents={totalAgents} averageProfit={averageProfit} isExpanded={isExpanded} />;
       
     case "analyzing":
       if (renderAnalyzing) {
@@ -94,6 +100,9 @@ export const IslandContent = ({
         return renderLiveSession(data as LiveSessionData, isExpanded);
       }
       return data ? <LiveSessionContent data={data as LiveSessionData} isExpanded={isExpanded} /> : null;
+      
+    case "preparing":
+      return data ? <PreparingContent type={(data as PreparingData).type} isExpanded={isExpanded} /> : null;
       
     case "hidden":
     default:

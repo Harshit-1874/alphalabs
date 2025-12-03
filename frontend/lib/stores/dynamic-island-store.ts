@@ -16,7 +16,8 @@ export type IslandMode =
   | "alpha"
   | "celebration"
   | "connection"
-  | "liveSession";
+  | "liveSession"
+  | "preparing";
 
 // Data types for different modes - enhanced with expanded view data
 export interface TradeData {
@@ -96,6 +97,10 @@ export interface AnalyzingData {
   totalCandles?: number;
 }
 
+export interface PreparingData {
+  type: "backtest" | "forward";
+}
+
 export type IslandData =
   | TradeData
   | NarratorData
@@ -104,6 +109,7 @@ export type IslandData =
   | ConnectionData
   | LiveSessionData
   | AnalyzingData
+  | PreparingData
   | null;
 
 interface DynamicIslandState {
@@ -129,6 +135,7 @@ interface DynamicIslandState {
   // Mode-specific actions
   showIdle: () => void;
   showAnalyzing: (data?: AnalyzingData) => void;
+  showPreparing: (data: PreparingData) => void;
   narrate: (text: string, type?: NarratorData["type"], details?: NarratorData) => void;
   showTradeExecuted: (trade: TradeData) => void;
   showAlphaDetected: (alpha: AlphaData) => void;
@@ -163,6 +170,8 @@ const getSizeForMode = (mode: IslandMode): SizePresets => {
       return "compact";
     case "liveSession":
       return "compact";
+    case "preparing":
+      return "compact"; // Expands to "tall" on hover for rich dashboard
     default:
       return "default";
   }
@@ -207,6 +216,18 @@ export const useDynamicIslandStore = create<DynamicIslandState>((set, get) => ({
       data: data || { message: "Analyzing..." },
       isVisible: true,
     });
+  },
+
+  // Show preparing state (getting ready for backtest/forward test)
+  showPreparing: (data: PreparingData) => {
+    get()._clearDismissTimeout();
+    set({
+      mode: "preparing",
+      size: getSizeForMode("preparing"),
+      data: data,
+      isVisible: true,
+    });
+    // Don't auto-dismiss - stay on screen until user navigates away
   },
 
   // Narrate text (queued) - now accepts full NarratorData for expanded info

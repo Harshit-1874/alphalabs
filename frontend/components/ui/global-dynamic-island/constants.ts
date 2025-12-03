@@ -14,6 +14,7 @@ export const MODE_TO_SIZE: Record<IslandMode, SizePresets> = {
   celebration: "tall",
   connection: "compact",
   liveSession: "compact", // Wider for Live + Agent + PnL display, expands to "medium" for richer dashboard
+  preparing: "compact", // Expands to "tall" on hover for rich dashboard
 };
 
 /**

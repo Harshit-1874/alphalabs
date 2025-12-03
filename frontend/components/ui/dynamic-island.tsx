@@ -11,6 +11,7 @@ import React, {
   useState,
 } from "react"
 import { AnimatePresence, motion, useWillChange } from "motion/react"
+import { useDynamicIslandStore, type IslandMode } from "@/lib/stores/dynamic-island-store"
 
 const stiffness = 400
 const damping = 30
@@ -118,7 +119,7 @@ const DynamicIslandSizePresets: Record<SizePresets, Preset> = {
   },
   [SIZE_PRESETS.TALL]: {
     width: 371,
-    aspectRatio: 210 / 371,
+    aspectRatio: 195 / 371, // Increased from 180 for better live-session fit
     borderRadius: 42,
   },
   [SIZE_PRESETS.ULTRA]: {
@@ -364,6 +365,7 @@ const DynamicIslandContent = ({
   [key: string]: any
 }) => {
   const { state, presets, setSize } = useDynamicIslandSize()
+  const { mode } = useDynamicIslandStore()
   const [isHovered, setIsHovered] = useState(false)
   
   // Use refs for hover expansion tracking to avoid stale closure issues
@@ -380,23 +382,35 @@ const DynamicIslandContent = ({
   const currentSize = presets[state.size]
 
   // Determine expanded size based on current size
-  const getExpandedSize = (size: SizePresets): SizePresets => {
-    switch (size) {
-      case "default":
-        return "large"
-      case "compact":
-        return "medium" // Changed from "large" to "medium" for better vertical space
-      case "compactLong":
-        return "medium" // Changed from "large" to "medium"
-      case "large":
-      case "long":
-        return "tall"
-      case "tall":
-      case "medium":
-        return "ultra"
-      default:
-        return size
+  const getExpandedSize = (size: SizePresets, mode?: IslandMode): SizePresets => {
+    const generalMap: Partial<Record<SizePresets, SizePresets>> = {
+      default: "medium",
+      compact: "long",
+      compactLong: "long",
+      large: "long",
+      long: "tall",
+      medium: "tall",
+      tall: "tall",
     }
+
+    let expanded = generalMap[size] ?? size
+    const isTradeLike = mode === "trade" || mode === "liveSession" || mode === "preparing" || mode === "analyzing"
+
+    if (isTradeLike) {
+      const prioritized: Partial<Record<SizePresets, SizePresets>> = {
+        compact: "tall",
+        compactLong: "tall",
+        large: "tall",
+        long: "tall",
+        default: "large",
+      }
+      expanded = prioritized[size] ?? expanded
+      if (expanded !== "tall" && expanded !== "ultra" && expanded !== "massive") {
+        expanded = "tall"
+      }
+    }
+
+    return expanded
   }
 
   // Track external size changes (from notifications, etc.)
@@ -410,7 +424,7 @@ const DynamicIslandContent = ({
     
     // If we're hover-expanded, check if this is an external change
     if (hs.isHoverExpanded && hs.originalSize) {
-      const expectedExpandedSize = getExpandedSize(hs.originalSize)
+      const expectedExpandedSize = getExpandedSize(hs.originalSize, mode)
       // If size changed to something other than the expected expanded size, reset
       if (state.size !== expectedExpandedSize && state.size !== hs.originalSize) {
         hs.isHoverExpanded = false
@@ -418,7 +432,7 @@ const DynamicIslandContent = ({
         hs.pendingShrinkTo = null
       }
     }
-  }, [state.size])
+  }, [state.size, mode])
 
   // Handle hover expand (desktop only)
   const handleMouseEnter = useCallback(() => {
@@ -433,7 +447,7 @@ const DynamicIslandContent = ({
     
     // Only expand if not already hover-expanded
     if (!hs.isHoverExpanded) {
-      const expandedSize = getExpandedSize(baseSize)
+      const expandedSize = getExpandedSize(baseSize, mode)
       
       if (expandedSize !== baseSize) {
         hs.originalSize = baseSize
@@ -441,7 +455,7 @@ const DynamicIslandContent = ({
         setSize(expandedSize)
       }
     }
-  }, [screenSize, state.size, setSize])
+  }, [screenSize, state.size, setSize, mode])
 
   const handleMouseLeave = useCallback(() => {
     if (screenSize === "mobile") return
@@ -474,7 +488,7 @@ const DynamicIslandContent = ({
     } else {
       // Expand
       const currentStateSize = state.size
-      const expandedSize = getExpandedSize(currentStateSize)
+      const expandedSize = getExpandedSize(currentStateSize, mode)
       
       if (expandedSize !== currentStateSize) {
         hs.originalSize = currentStateSize
@@ -482,7 +496,7 @@ const DynamicIslandContent = ({
         setSize(expandedSize)
       }
     }
-  }, [screenSize, state.size, setSize])
+  }, [screenSize, state.size, setSize, mode])
 
   const dimensions = calculateDimensions(state.size, screenSize, currentSize)
 

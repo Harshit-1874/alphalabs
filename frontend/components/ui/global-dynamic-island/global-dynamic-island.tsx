@@ -24,6 +24,8 @@ import type { GlobalDynamicIslandProps } from "./types";
 const IslandContentWithSize = ({
   mode,
   data,
+  totalAgents,
+  averageProfit,
   idleContent,
   renderNarrator,
   renderTrade,
@@ -42,6 +44,8 @@ const IslandContentWithSize = ({
       mode={mode}
       data={data}
       isExpanded={isExpanded}
+      totalAgents={totalAgents}
+      averageProfit={averageProfit}
       idleContent={idleContent}
       renderNarrator={renderNarrator}
       renderTrade={renderTrade}
@@ -61,6 +65,8 @@ const GlobalDynamicIslandInner = ({
   className,
   enableConfetti = true,
   confettiColors = ["#22c55e", "#86efac", "#fbbf24", "#E8400D"],
+  totalAgents,
+  averageProfit,
   idleContent,
   renderNarrator,
   renderTrade,
@@ -116,6 +122,8 @@ const GlobalDynamicIslandInner = ({
               <IslandContentWithSize
                 mode={mode}
                 data={data}
+                totalAgents={totalAgents}
+                averageProfit={averageProfit}
                 idleContent={idleContent}
                 renderNarrator={renderNarrator}
                 renderTrade={renderTrade}
