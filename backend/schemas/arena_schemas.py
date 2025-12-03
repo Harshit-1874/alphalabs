@@ -84,11 +84,11 @@ class ForwardStartRequest(BaseModel):
     agent_id: UUID
     asset: str
     timeframe: str
-    starting_capital: float
+    starting_capital: float = Field(..., ge=100, le=1000000)
     safety_mode: bool = True
     email_notifications: bool = True
     auto_stop_on_loss: bool = True
-    auto_stop_loss_pct: float = 10.0
+    auto_stop_loss_pct: float = Field(10.0, ge=0.0, le=100.0)
 
 class ForwardSessionResponse(BaseModel):
     id: UUID
@@ -117,6 +117,22 @@ class ForwardActiveSession(BaseModel):
 
 class ForwardActiveListResponse(BaseModel):
     sessions: List[ForwardActiveSession]
+
+class ForwardStatusResponse(BaseModel):
+    id: UUID
+    status: str
+    started_at: Optional[datetime]
+    elapsed_seconds: int
+    current_equity: float
+    current_pnl_pct: float
+    max_drawdown_pct: float
+    trades_count: int
+    win_rate: float
+    next_candle_eta: Optional[int] = None
+    open_position: Optional[OpenPosition] = None
+
+class ForwardStatusWrapper(BaseModel):
+    session: ForwardStatusResponse
 
 class ForwardStopResponse(BaseModel):
     session_id: UUID

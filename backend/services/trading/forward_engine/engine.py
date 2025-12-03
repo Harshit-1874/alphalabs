@@ -33,7 +33,7 @@ Usage:
 import asyncio
 import logging
 from datetime import datetime
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -346,7 +346,7 @@ class ForwardEngine:
             if session_id in self.active_sessions:
                 del self.active_sessions[session_id]
     
-    async def stop_forward_test(self, session_id: str) -> str:
+    async def stop_forward_test(self, session_id: str, close_position: bool = True) -> Tuple[str, bool]:
         """
         Stop a forward test and generate results.
         
@@ -356,7 +356,7 @@ class ForwardEngine:
             session_id: Session identifier
             
         Returns:
-            result_id: ID of generated result record
+            Tuple of result_id and whether a position was closed
             
         Raises:
             ValidationError: If session not found
@@ -370,11 +370,12 @@ class ForwardEngine:
         # Set stop flag
         session_state.is_stopped = True
         
+        position_closed = False
         async with self.session_factory() as db:
             market_data_service = MarketDataService(db)
             
             # Close open position if exists
-            if session_state.position_manager.has_open_position():
+            if close_position and session_state.position_manager.has_open_position():
                 # Get latest price
                 latest_candle = await market_data_service.get_latest_candle(
                     session_state.asset,
@@ -396,6 +397,7 @@ class ForwardEngine:
                         latest_candle.timestamp,
                         email_notifications=False
                     )
+                    position_closed = True
             
             # Generate results
             result_id = await self._complete_forward_test(
@@ -407,7 +409,7 @@ class ForwardEngine:
         
         logger.info(f"Forward test stopped: session_id={session_id}, result_id={result_id}")
         
-        return result_id
+        return result_id, position_closed
     
     def get_session_state(self, session_id: str) -> Optional[SessionState]:
         """
