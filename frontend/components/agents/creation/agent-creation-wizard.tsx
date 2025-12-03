@@ -203,7 +203,7 @@ export function AgentCreationWizard() {
                   "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
-              {currentStep === 4 ? "Create Agent ✓" : "Continue →"}
+              {currentStep === 4 ? "Create Agent ->" : "Continue ->"}
             </Button>
           </motion.div>
         </div>

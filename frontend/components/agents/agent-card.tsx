@@ -78,7 +78,7 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
               </Badge>
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {agent.model} • {indicatorsPreview}
+              {agent.model} - {indicatorsPreview}
             </p>
           </div>
 

@@ -67,6 +67,9 @@ export interface StepModelApiProps {
 export interface StepIdentityProps {
   formData: AgentFormData;
   updateFormData: (updates: Partial<AgentFormData>) => void;
+  validationErrors?: Record<string, string>;
+  setValidationErrors?: (errors: Record<string, string>) => void;
+  currentAgentId?: string;
 }
 
 export interface StepDataBuffetProps {

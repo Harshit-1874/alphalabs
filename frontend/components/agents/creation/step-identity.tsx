@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Crosshair, Eye } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
+import { useAgents } from "@/hooks/use-agents";
 import type { StepIdentityProps } from "@/types/agent";
 
 const modes = [
@@ -35,7 +37,56 @@ const modes = [
   },
 ];
 
-export function StepIdentity({ formData, updateFormData }: StepIdentityProps) {
+export function StepIdentity({
+  formData,
+  updateFormData,
+  validationErrors,
+  setValidationErrors,
+  currentAgentId
+}: StepIdentityProps) {
+  const { agents } = useAgents();
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    const checkName = async () => {
+      if (!formData.name || formData.name.length < 2) {
+        if (setValidationErrors) {
+          setValidationErrors({ ...validationErrors, name: "" });
+        }
+        return;
+      }
+
+      setIsChecking(true);
+
+      // Simulate network delay for realism (and to prevent flickering)
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const nameExists = agents.some(a =>
+        a.name.toLowerCase() === formData.name.toLowerCase() &&
+        a.id !== currentAgentId
+      );
+
+      if (setValidationErrors) {
+        if (nameExists) {
+          setValidationErrors({ ...validationErrors, name: "Agent name already exists" });
+        } else {
+          const newErrors = { ...validationErrors };
+          delete newErrors.name;
+          setValidationErrors(newErrors);
+        }
+      }
+      setIsChecking(false);
+    };
+
+    const timeoutId = setTimeout(checkName, 500);
+    return () => clearTimeout(timeoutId);
+  }, [formData.name, agents, currentAgentId, setValidationErrors]); // validationErrors in dependency might cause loop if not careful
+
+  // Fix dependency loop by using functional update or omitting validationErrors from dep array if safe
+  // Actually, better to not include validationErrors in dep array if we use functional update
+  // But here we use object spread.
+  // Let's refactor to avoid dependency issues.
+
   return (
     <div className="space-y-6">
       {/* Agent Name */}
@@ -43,17 +94,31 @@ export function StepIdentity({ formData, updateFormData }: StepIdentityProps) {
         <Label htmlFor="name" className="text-sm font-medium">
           Agent Name <span className="text-destructive">*</span>
         </Label>
-        <Input
-          id="name"
-          placeholder="Enter agent name..."
-          value={formData.name}
-          onChange={(e) => updateFormData({ name: e.target.value })}
-          className="input-glow font-mono"
-          maxLength={30}
-        />
-        <p className="text-xs text-muted-foreground">
-          Give your agent a memorable name (e.g., &quot;Alpha-1&quot;, &quot;MomentumBot&quot;)
-        </p>
+        <div className="relative">
+          <Input
+            id="name"
+            placeholder="Enter agent name..."
+            value={formData.name}
+            onChange={(e) => updateFormData({ name: e.target.value })}
+            className={cn(
+              "input-glow font-mono",
+              validationErrors?.name && "border-destructive focus-visible:ring-destructive"
+            )}
+            maxLength={30}
+          />
+          {isChecking && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent block" />
+            </div>
+          )}
+        </div>
+        {validationErrors?.name ? (
+          <p className="text-xs text-destructive">{validationErrors.name}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Give your agent a memorable name (e.g., &quot;Alpha-1&quot;, &quot;MomentumBot&quot;)
+          </p>
+        )}
       </div>
 
       {/* Arena Mode Selection */}

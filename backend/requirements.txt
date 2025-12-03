@@ -8,4 +8,12 @@ cryptography==41.0.7
 psycopg2-binary==2.9.9
 sqlalchemy[asyncio]==2.0.23
 asyncpg==0.29.0
+pydantic-settings==2.1.0
+pydantic==2.5.0
+pandas==2.1.4
+ta==0.11.0
+pytest==7.4.3
+pytest-asyncio==0.21.1
+openai==1.12.0
+yfinance==0.2.33
 

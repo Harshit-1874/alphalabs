@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Syne, JetBrains_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { UserSyncProvider } from "@/components/providers/user-sync-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -45,8 +46,10 @@ export default function RootLayout({
       <html lang="en" suppressHydrationWarning>
         <body className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${jetbrainsMono.variable} bg-background`}>
           <ThemeProvider>
-            {children}
-            <Toaster richColors position="bottom-right" />
+            <UserSyncProvider>
+              {children}
+              <Toaster richColors position="bottom-right" />
+            </UserSyncProvider>
           </ThemeProvider>
         </body>
       </html>

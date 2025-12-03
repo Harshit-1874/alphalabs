@@ -49,6 +49,7 @@ class TestSession(Base, UUIDMixin, TimestampMixin):
             end_date=date(2025, 1, 31)
         )
     """
+    __test__ = False  # Prevent pytest from collecting this as a test class
     __tablename__ = "test_sessions"
     __table_args__ = (
         Index('idx_sessions_user', 'user_id'),

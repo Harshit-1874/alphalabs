@@ -47,10 +47,10 @@ const mockApiKeys: ApiKey[] = [
     id: "1",
     provider: "OpenRouter",
     label: "Default",
-    maskedKey: "sk-or-v1-‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢",
+    maskedKey: "sk-or-v1-G«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«Û",
     addedAt: new Date("2025-11-15"),
     lastUsed: "2 hours ago",
-    usedBy: ["Œ±-prime", "Œ≤-2"],
+    usedBy: ["+¶-prime", "+¶-2"],
     status: "valid",
     isDefault: true,
   },
@@ -58,7 +58,7 @@ const mockApiKeys: ApiKey[] = [
     id: "2",
     provider: "OpenRouter",
     label: "Secondary",
-    maskedKey: "sk-or-v1-‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢",
+    maskedKey: "sk-or-v1-G«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«ÛG«Û",
     addedAt: new Date("2025-11-20"),
     lastUsed: null,
     usedBy: [],
@@ -200,7 +200,7 @@ export default function ApiKeysSettingsPage() {
                     {showKey === apiKey.id ? "sk-or-v1-actual-key-here" : apiKey.maskedKey}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Added: {apiKey.addedAt.toLocaleDateString()} ‚Ä¢ Last used:{" "}
+                    Added: {apiKey.addedAt.toLocaleDateString()} G«Û Last used:{" "}
                     {apiKey.lastUsed || "Never"}
                   </p>
                   {apiKey.usedBy.length > 0 && (
@@ -278,7 +278,7 @@ export default function ApiKeysSettingsPage() {
               <div className="flex items-center justify-between">
                 <span className="font-medium">Direct API</span>
                 <Button variant="link" size="sm" className="h-auto p-0">
-                  Setup ‚Üí
+                  Setup GÂ∆
                 </Button>
               </div>
             </div>

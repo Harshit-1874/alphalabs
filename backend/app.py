@@ -1,3 +1,16 @@
+"""
+Main FastAPI Application Entry Point.
+
+Purpose:
+    Initializes the FastAPI application, configures middleware (CORS), 
+    sets up database connections/lifespan events, and registers API routers.
+
+Data Flow:
+    - Incoming: All HTTP requests to the backend.
+    - Processing: Routes requests to specific routers (e.g., api/users.py) or handles global endpoints (health, webhooks).
+    - Outgoing: HTTP responses back to the client.
+    - Integration: Connects to Supabase/PostgreSQL and external APIs (OpenRouter, Clerk).
+"""
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -9,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from database import get_supabase_client, get_db, validate_database_connection, validate_database_schema
+from api import users, api_keys, agents, arena, data, results
 from auth import verify_clerk_token, get_user_id_from_token
 from webhooks import verify_webhook_signature, handle_user_created, handle_user_updated, handle_user_deleted
 from models import User
@@ -97,6 +111,10 @@ async def lifespan(app: FastAPI):
         logger.info("✓ Shutdown complete")
 
 
+from api.users import router as user_router
+
+# ... (previous code)
+
 app = FastAPI(lifespan=lifespan)
 
 # Configure CORS
@@ -107,6 +125,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Routers
+app.include_router(users.router)
+app.include_router(api_keys.router)
+app.include_router(agents.router)
+app.include_router(arena.router)
+app.include_router(data.router)
+app.include_router(results.router)
 
 @app.get('/api/health')
 def health():
@@ -141,193 +167,6 @@ def openrouter_chat(request_data: dict):
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post('/api/users/sync')
-async def sync_user(
-    authorization: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Sync or create user in database from Clerk token.
-    This endpoint should be called after user signs in/up in Clerk.
-    
-    Uses SQLAlchemy ORM for database operations.
-    """
-    try:
-        # Verify Clerk token
-        token_payload = await verify_clerk_token(authorization)
-        clerk_user_id = get_user_id_from_token(token_payload)
-        
-        # Get user info from token
-        # Clerk token structure: sub (user ID), email, and other claims
-        # The token may contain user data directly or we may need to fetch from Clerk API
-        email = token_payload.get("email")
-        first_name = token_payload.get("first_name") or token_payload.get("given_name")
-        last_name = token_payload.get("last_name") or token_payload.get("family_name")
-        username = token_payload.get("username")
-        image_url = token_payload.get("image_url") or token_payload.get("picture")
-        
-        # If email not in token, try to fetch from Clerk API using user ID
-        if not email:
-            # Fetch user details from Clerk API
-            import requests
-            clerk_secret_key = os.getenv("CLERK_SECRET_KEY")
-            if clerk_secret_key:
-                try:
-                    user_response = requests.get(
-                        f"https://api.clerk.com/v1/users/{clerk_user_id}",
-                        headers={"Authorization": f"Bearer {clerk_secret_key}"},
-                        timeout=10
-                    )
-                    if user_response.status_code == 200:
-                        user_data = user_response.json()
-                        email = user_data.get("email_addresses", [{}])[0].get("email_address") if user_data.get("email_addresses") else None
-                        first_name = first_name or user_data.get("first_name")
-                        last_name = last_name or user_data.get("last_name")
-                        username = username or user_data.get("username")
-                        image_url = image_url or user_data.get("image_url")
-                except Exception:
-                    pass  # Continue with available data
-        
-        if not email:
-            raise HTTPException(status_code=400, detail="Email not found in token")
-        
-        # Check if user exists using SQLAlchemy
-        stmt = select(User).where(User.clerk_id == clerk_user_id)
-        result = await db.execute(stmt)
-        existing_user = result.scalar_one_or_none()
-        
-        if existing_user:
-            # Update existing user
-            existing_user.email = email
-            if first_name is not None:
-                existing_user.first_name = first_name
-            if last_name is not None:
-                existing_user.last_name = last_name
-            if username is not None:
-                existing_user.username = username
-            if image_url is not None:
-                existing_user.image_url = image_url
-            
-            await db.commit()
-            await db.refresh(existing_user)
-            
-            return {
-                "message": "User updated",
-                "user": {
-                    "id": str(existing_user.id),
-                    "clerk_id": existing_user.clerk_id,
-                    "email": existing_user.email,
-                    "first_name": existing_user.first_name,
-                    "last_name": existing_user.last_name,
-                    "username": existing_user.username,
-                    "image_url": existing_user.image_url,
-                    "timezone": existing_user.timezone,
-                    "plan": existing_user.plan,
-                    "is_active": existing_user.is_active,
-                    "created_at": existing_user.created_at.isoformat() if existing_user.created_at else None,
-                    "updated_at": existing_user.updated_at.isoformat() if existing_user.updated_at else None,
-                }
-            }
-        else:
-            # Create new user
-            new_user = User(
-                clerk_id=clerk_user_id,
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                username=username,
-                image_url=image_url,
-            )
-            
-            db.add(new_user)
-            await db.commit()
-            await db.refresh(new_user)
-            
-            return {
-                "message": "User created",
-                "user": {
-                    "id": str(new_user.id),
-                    "clerk_id": new_user.clerk_id,
-                    "email": new_user.email,
-                    "first_name": new_user.first_name,
-                    "last_name": new_user.last_name,
-                    "username": new_user.username,
-                    "image_url": new_user.image_url,
-                    "timezone": new_user.timezone,
-                    "plan": new_user.plan,
-                    "is_active": new_user.is_active,
-                    "created_at": new_user.created_at.isoformat() if new_user.created_at else None,
-                    "updated_at": new_user.updated_at.isoformat() if new_user.updated_at else None,
-                }
-            }
-            
-    except HTTPException:
-        raise
-    except IntegrityError as e:
-        # Handle unique constraint violations
-        await db.rollback()
-        logger.error(f"Database integrity error: {e}")
-        raise HTTPException(status_code=409, detail="User with this email or clerk_id already exists")
-    except SQLAlchemyError as e:
-        # Handle other database errors
-        await db.rollback()
-        logger.error(f"Database error: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error syncing user: {e}")
-        raise HTTPException(status_code=500, detail=f"Error syncing user: {str(e)}")
-
-@app.get('/api/users/me')
-async def get_current_user(
-    authorization: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Get current user profile from database.
-    Protected endpoint - requires valid Clerk token.
-    
-    Uses SQLAlchemy ORM with eager loading for related data.
-    """
-    try:
-        # Verify Clerk token
-        token_payload = await verify_clerk_token(authorization)
-        clerk_user_id = get_user_id_from_token(token_payload)
-        
-        # Fetch user from database using SQLAlchemy
-        stmt = select(User).where(User.clerk_id == clerk_user_id)
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found in database")
-        
-        return {
-            "user": {
-                "id": str(user.id),
-                "clerk_id": user.clerk_id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "username": user.username,
-                "image_url": user.image_url,
-                "timezone": user.timezone,
-                "plan": user.plan,
-                "is_active": user.is_active,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-                "updated_at": user.updated_at.isoformat() if user.updated_at else None,
-            }
-        }
-        
-    except HTTPException:
-        raise
-    except SQLAlchemyError as e:
-        logger.error(f"Database error: {e}")
-        raise HTTPException(status_code=500, detail="Database error occurred")
-    except Exception as e:
-        logger.error(f"Error fetching user: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching user: {str(e)}")
 
 @app.post('/api/webhooks/clerk')
 async def clerk_webhook(request: Request, svix_id: Optional[str] = Header(None), svix_timestamp: Optional[str] = Header(None), svix_signature: Optional[str] = Header(None)):

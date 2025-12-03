@@ -307,7 +307,7 @@ export const PreparingContent = ({ type, isExpanded }: PreparingContentProps) =>
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
-            "{currentQuote.quote}"
+            &ldquo;{currentQuote.quote}&rdquo;
           </motion.p>
           
           <p 
