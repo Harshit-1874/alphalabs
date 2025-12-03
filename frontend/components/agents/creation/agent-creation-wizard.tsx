@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronLeft, Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { StepIdentity } from "./step-identity";
@@ -179,20 +180,32 @@ export function AgentCreationWizard() {
         </Button>
         <div className="flex gap-3">
           {currentStep > 1 && (
-            <Button variant="outline" onClick={handleBack}>
-              Back
-            </Button>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+            >
+              <Button variant="outline" onClick={handleBack}>
+                Back
+              </Button>
+            </motion.div>
           )}
-          <Button
-            onClick={handleNext}
-            disabled={!canProceed()}
-            className={cn(
-              currentStep === 4 &&
-                "bg-primary text-primary-foreground hover:bg-primary/90"
-            )}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
-            {currentStep === 4 ? "Create Agent ✓" : "Continue →"}
-          </Button>
+            <Button
+              onClick={handleNext}
+              disabled={!canProceed()}
+              className={cn(
+                currentStep === 4 &&
+                  "bg-primary text-primary-foreground hover:bg-primary/90"
+              )}
+            >
+              {currentStep === 4 ? "Create Agent ✓" : "Continue →"}
+            </Button>
+          </motion.div>
         </div>
       </div>
     </div>

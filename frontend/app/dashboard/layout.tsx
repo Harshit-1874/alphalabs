@@ -5,6 +5,17 @@ import { SidebarProvider, SidebarInset, SidebarTrigger, useSidebar } from "@/com
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { usePathname } from "next/navigation";
+import { useUIStore } from "@/lib/stores";
+import { GlobalDynamicIsland } from "@/components/ui/global-dynamic-island";
+import type { AccentColor } from "@/types";
+
+// Accent color mappings to HSL values
+const accentColorMap: Record<AccentColor, { primary: string; ring: string }> = {
+  cyan: { primary: "14 94% 48%", ring: "14 94% 48%" },      // Flame Orange (default brand)
+  purple: { primary: "263 70% 60%", ring: "263 70% 60%" },  // Lavender Purple
+  green: { primary: "142 71% 45%", ring: "142 71% 45%" },   // Green
+  amber: { primary: "38 92% 50%", ring: "38 92% 50%" },     // Amber/Cream
+};
 
 // Map routes to page titles
 const pageTitles: Record<string, string> = {
@@ -35,6 +46,23 @@ function KeyboardShortcuts() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSidebar]);
+
+  return null;
+}
+
+// Apply accent color to CSS variables
+function AccentColorProvider() {
+  const { accentColor } = useUIStore();
+
+  useEffect(() => {
+    const colors = accentColorMap[accentColor];
+    if (colors) {
+      document.documentElement.style.setProperty("--primary", colors.primary);
+      document.documentElement.style.setProperty("--ring", colors.ring);
+      document.documentElement.style.setProperty("--sidebar-primary", colors.primary);
+      document.documentElement.style.setProperty("--sidebar-ring", colors.ring);
+    }
+  }, [accentColor]);
 
   return null;
 }
@@ -73,6 +101,8 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <KeyboardShortcuts />
+      <AccentColorProvider />
+      <GlobalDynamicIsland />
       <AppSidebar />
       <SidebarInset>
         {/* Top Header Bar */}
@@ -88,7 +118,7 @@ export default function DashboardLayout({
         
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto">
-          <div className="container max-w-[1400px] mx-auto p-4 md:p-6 lg:p-8">
+          <div className="container max-w-[1400px] mx-auto px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8">
             {children}
           </div>
         </main>

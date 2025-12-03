@@ -20,12 +20,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { cn } from "@/lib/utils";
 import { useResultsStore } from "@/lib/stores";
 import { DUMMY_RESULTS } from "@/lib/dummy-data";
@@ -146,8 +146,8 @@ export function CompareResults() {
           Back to Results
         </Link>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[hsl(var(--accent-purple)/0.2)]">
-            <GitCompare className="h-5 w-5 text-[hsl(var(--accent-purple))]" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[hsl(var(--brand-flame)/0.2)]">
+            <GitCompare className="h-5 w-5 text-[hsl(var(--brand-flame))]" />
           </div>
           <div>
             <h1 className="font-mono text-2xl font-bold">Compare Results</h1>
@@ -168,25 +168,26 @@ export function CompareResults() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Select value={leftResultId} onValueChange={setLeftResultId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a result..." />
-              </SelectTrigger>
-              <SelectContent>
+            <AnimatedSelect value={leftResultId} onValueChange={setLeftResultId}>
+              <AnimatedSelectTrigger>
+                <AnimatedSelectValue placeholder="Select a result..." />
+              </AnimatedSelectTrigger>
+              <AnimatedSelectContent>
                 {results.map((result) => (
-                  <SelectItem 
+                  <AnimatedSelectItem 
                     key={result.id} 
                     value={result.id}
+                    textValue={result.agentName}
                     disabled={result.id === rightResultId}
                   >
                     <span className="font-mono">{result.agentName}</span>
                     <span className="ml-2 text-xs text-muted-foreground">
                       {result.pnl >= 0 ? "+" : ""}{result.pnl.toFixed(1)}%
                     </span>
-                  </SelectItem>
+                  </AnimatedSelectItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </AnimatedSelectContent>
+            </AnimatedSelect>
             {leftResult && (
               <div className="mt-3 flex items-center justify-between">
                 <Badge variant="outline">{leftResult.type}</Badge>
@@ -216,25 +217,26 @@ export function CompareResults() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Select value={rightResultId} onValueChange={setRightResultId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a result..." />
-              </SelectTrigger>
-              <SelectContent>
+            <AnimatedSelect value={rightResultId} onValueChange={setRightResultId}>
+              <AnimatedSelectTrigger>
+                <AnimatedSelectValue placeholder="Select a result..." />
+              </AnimatedSelectTrigger>
+              <AnimatedSelectContent>
                 {results.map((result) => (
-                  <SelectItem 
+                  <AnimatedSelectItem 
                     key={result.id} 
                     value={result.id}
+                    textValue={result.agentName}
                     disabled={result.id === leftResultId}
                   >
                     <span className="font-mono">{result.agentName}</span>
                     <span className="ml-2 text-xs text-muted-foreground">
                       {result.pnl >= 0 ? "+" : ""}{result.pnl.toFixed(1)}%
                     </span>
-                  </SelectItem>
+                  </AnimatedSelectItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </AnimatedSelectContent>
+            </AnimatedSelect>
             {rightResult && (
               <div className="mt-3 flex items-center justify-between">
                 <Badge variant="outline">{rightResult.type}</Badge>

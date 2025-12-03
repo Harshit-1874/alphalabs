@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,12 @@ export default function RiskLimitsSettingsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-[hsl(var(--accent-amber)/0.3)] bg-[hsl(var(--accent-amber)/0.05)]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -149,7 +155,7 @@ export default function RiskLimitsSettingsPage() {
           Save Risk Limits
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -1,6 +1,11 @@
 import { ResultsList } from "@/components/results/results-list";
+import { PageTransition } from "@/components/ui/page-transition";
 
 export default function ResultsPage() {
-  return <ResultsList />;
+  return (
+    <PageTransition>
+      <ResultsList />
+    </PageTransition>
+  );
 }
 

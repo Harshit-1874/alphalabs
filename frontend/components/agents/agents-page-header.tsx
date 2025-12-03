@@ -5,13 +5,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AnimatedDropdown,
+  AnimatedDropdownContent,
+  AnimatedDropdownCheckboxItem,
+  AnimatedDropdownLabel,
+  AnimatedDropdownSeparator,
+  AnimatedDropdownTrigger,
+} from "@/components/ui/animated-dropdown";
 import { Badge } from "@/components/ui/badge";
 import { useAgentsStore } from "@/lib/stores";
 import type { AgentMode } from "@/types";
@@ -78,8 +78,8 @@ export function AgentsPageHeader() {
         </div>
 
         {/* Filter Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <AnimatedDropdown>
+          <AnimatedDropdownTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
               <Filter className="h-4 w-4" />
               Filter
@@ -92,47 +92,47 @@ export function AgentsPageHeader() {
                 </Badge>
               )}
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuLabel>Model</DropdownMenuLabel>
-            <DropdownMenuCheckboxItem
+          </AnimatedDropdownTrigger>
+          <AnimatedDropdownContent align="start" className="w-56">
+            <AnimatedDropdownLabel>Model</AnimatedDropdownLabel>
+            <AnimatedDropdownCheckboxItem
               checked={filters.models.includes("deepseek-r1")}
               onCheckedChange={() => toggleModelFilter("deepseek-r1")}
             >
               DeepSeek-R1
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.models.includes("claude-3.5")}
               onCheckedChange={() => toggleModelFilter("claude-3.5")}
             >
               Claude 3.5
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.models.includes("gemini-1.5")}
               onCheckedChange={() => toggleModelFilter("gemini-1.5")}
             >
               Gemini 1.5 Pro
-            </DropdownMenuCheckboxItem>
+            </AnimatedDropdownCheckboxItem>
 
-            <DropdownMenuSeparator />
+            <AnimatedDropdownSeparator />
 
-            <DropdownMenuLabel>Mode</DropdownMenuLabel>
-            <DropdownMenuCheckboxItem
+            <AnimatedDropdownLabel>Mode</AnimatedDropdownLabel>
+            <AnimatedDropdownCheckboxItem
               checked={filters.modes.includes("monk")}
               onCheckedChange={() => toggleModeFilter("monk" as AgentMode)}
             >
               Monk Mode
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.modes.includes("omni")}
               onCheckedChange={() => toggleModeFilter("omni" as AgentMode)}
             >
               Omni Mode
-            </DropdownMenuCheckboxItem>
+            </AnimatedDropdownCheckboxItem>
 
             {activeFiltersCount > 0 && (
               <>
-                <DropdownMenuSeparator />
+                <AnimatedDropdownSeparator />
                 <div className="p-2">
                   <Button
                     variant="ghost"
@@ -145,50 +145,50 @@ export function AgentsPageHeader() {
                 </div>
               </>
             )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </AnimatedDropdownContent>
+        </AnimatedDropdown>
 
         {/* Sort Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <AnimatedDropdown>
+          <AnimatedDropdownTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
               <ArrowUpDown className="h-4 w-4" />
               Sort
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuCheckboxItem
+          </AnimatedDropdownTrigger>
+          <AnimatedDropdownContent align="start">
+            <AnimatedDropdownCheckboxItem
               checked={filters.sortBy === "newest"}
               onCheckedChange={() => setSortBy("newest")}
             >
               Newest First
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.sortBy === "oldest"}
               onCheckedChange={() => setSortBy("oldest")}
             >
               Oldest First
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.sortBy === "performance"}
               onCheckedChange={() => setSortBy("performance")}
             >
               Best Performance
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.sortBy === "tests"}
               onCheckedChange={() => setSortBy("tests")}
             >
               Most Tests
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
+            </AnimatedDropdownCheckboxItem>
+            <AnimatedDropdownCheckboxItem
               checked={filters.sortBy === "alpha"}
               onCheckedChange={() => setSortBy("alpha")}
             >
               Alphabetical
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </AnimatedDropdownCheckboxItem>
+          </AnimatedDropdownContent>
+        </AnimatedDropdown>
       </div>
     </div>
   );

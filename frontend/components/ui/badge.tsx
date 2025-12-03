@@ -22,7 +22,7 @@ const badgeVariants = cva(
         info:
           "border-transparent bg-[hsl(var(--accent-blue))] text-white shadow-sm",
         premium:
-          "border-transparent bg-[hsl(var(--accent-purple))] text-white shadow-sm",
+          "border-transparent bg-[hsl(var(--brand-flame))] text-white shadow-sm",
       },
     },
     defaultVariants: {

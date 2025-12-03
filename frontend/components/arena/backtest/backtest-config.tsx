@@ -9,12 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAgentsStore, useArenaStore } from "@/lib/stores";
@@ -95,45 +95,42 @@ export function BacktestConfig() {
   const canStart = config.agentId && config.asset && config.capital;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50">
-            <History className="h-5 w-5 text-muted-foreground" />
+    <div className="space-y-4">
+      {/* Header - Compact */}
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/50">
+          <History className="h-4 w-4 text-muted-foreground" />
           </div>
           <div>
-            <h1 className="font-mono text-2xl font-bold">Backtest Arena</h1>
-            <p className="text-sm text-muted-foreground">
+          <h1 className="font-mono text-lg font-bold">Backtest Arena</h1>
+          <p className="text-xs text-muted-foreground">
               Test your AI agent against historical market data
             </p>
-          </div>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-        <div className="space-y-6">
+      <div className="space-y-4">
           {/* Step 1: Select Agent */}
           <Card className="border-border/50 bg-card/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[10px]">
                   1
                 </span>
                 Select Agent
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <Select
+          <CardContent className="space-y-2 px-3 pb-3">
+              <AnimatedSelect
                 value={config.agentId}
                 onValueChange={(value) => setConfig({ ...config, agentId: value })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an agent..." />
-                </SelectTrigger>
-                <SelectContent>
+              <AnimatedSelectTrigger className="h-8 text-sm">
+                  <AnimatedSelectValue placeholder="Select an agent..." />
+                </AnimatedSelectTrigger>
+                <AnimatedSelectContent>
                   {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
+                    <AnimatedSelectItem key={agent.id} value={agent.id} textValue={agent.name}>
                       <div className="flex items-center gap-3">
                         <Bot className="h-4 w-4" />
                         <span className="font-mono">{agent.name}</span>
@@ -144,32 +141,32 @@ export function BacktestConfig() {
                           {agent.stats.totalTests} tests
                         </Badge>
                       </div>
-                    </SelectItem>
+                    </AnimatedSelectItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </AnimatedSelectContent>
+              </AnimatedSelect>
 
               {selectedAgent && (
-                <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-2">
                   <div className="flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-mono text-sm font-medium">
+                  <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-mono text-xs font-medium">
                       {selectedAgent.name}
                     </span>
                     <Badge
                       variant="outline"
                       className={cn(
-                        "text-xs",
+                      "text-[10px] h-4",
                         selectedAgent.mode === "monk"
-                          ? "border-[hsl(var(--accent-purple)/0.3)] text-[hsl(var(--accent-purple))]"
+                        ? "border-[hsl(var(--brand-lavender)/0.3)] text-[hsl(var(--brand-lavender))]"
                           : "border-primary/30 text-primary"
                       )}
                     >
                       {selectedAgent.mode}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {selectedAgent.model} • {selectedAgent.stats.totalTests} previous tests
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {selectedAgent.model} • {selectedAgent.stats.totalTests} tests
                   </p>
                 </div>
               )}
@@ -178,124 +175,127 @@ export function BacktestConfig() {
 
           {/* Step 2: Arena Settings */}
           <Card className="border-border/50 bg-card/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[10px]">
                   2
                 </span>
                 Arena Settings
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Asset</Label>
-                  <Select
+          <CardContent className="space-y-2.5 px-3 pb-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Asset</Label>
+                  <AnimatedSelect
                     value={config.asset}
                     onValueChange={(value) => setConfig({ ...config, asset: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
+                  <AnimatedSelectTrigger className="h-8 text-sm">
+                      <AnimatedSelectValue />
+                    </AnimatedSelectTrigger>
+                    <AnimatedSelectContent>
                       {assets.map((asset) => (
-                        <SelectItem key={asset.id} value={asset.id}>
+                        <AnimatedSelectItem key={asset.id} value={asset.id} textValue={asset.name}>
                           <span>
                             {asset.icon} {asset.name}
                           </span>
-                        </SelectItem>
+                        </AnimatedSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </AnimatedSelectContent>
+                  </AnimatedSelect>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Timeframe</Label>
-                  <Select
+              <div className="space-y-1.5">
+                <Label className="text-xs">Timeframe</Label>
+                  <AnimatedSelect
                     value={config.timeframe}
                     onValueChange={(value) => setConfig({ ...config, timeframe: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
+                  <AnimatedSelectTrigger className="h-8 text-sm">
+                      <AnimatedSelectValue />
+                    </AnimatedSelectTrigger>
+                    <AnimatedSelectContent>
                       {timeframes.map((tf) => (
-                        <SelectItem key={tf.id} value={tf.id}>
+                        <AnimatedSelectItem key={tf.id} value={tf.id} textValue={tf.name}>
                           {tf.name}
-                        </SelectItem>
+                        </AnimatedSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </AnimatedSelectContent>
+                  </AnimatedSelect>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Date Range</Label>
-                <div className="flex flex-wrap gap-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Date Range</Label>
+              <div className="flex flex-wrap gap-1.5">
                   {datePresets.map((preset) => (
                     <Button
                       key={preset.id}
                       variant={config.datePreset === preset.id ? "secondary" : "outline"}
                       size="sm"
                       onClick={() => setConfig({ ...config, datePreset: preset.id })}
+                    className="text-xs h-7 px-2.5"
                     >
                       {preset.name}
                     </Button>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                   ~{estimatedCandles} candles • {config.timeframe} timeframe
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* Step 3: Simulation Settings */}
+          {/* Step 3: Simulation Settings & Summary - Side by side */}
+          <div className="grid gap-3 lg:grid-cols-2">
+            {/* Simulation Settings */}
           <Card className="border-border/50 bg-card/30">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs">
+              <CardHeader className="py-2 px-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[10px]">
                   3
                 </span>
                 Simulation Settings
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Starting Capital</Label>
+              <CardContent className="space-y-2.5 px-3 pb-3">
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Starting Capital</Label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <DollarSign className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       type="number"
                       value={config.capital}
                       onChange={(e) => setConfig({ ...config, capital: e.target.value })}
-                      className="pl-9 font-mono"
+                      className="pl-8 font-mono text-sm h-8"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Playback Speed</Label>
-                  <Select
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Playback Speed</Label>
+                  <AnimatedSelect
                     value={config.speed}
                     onValueChange={(value) => setConfig({ ...config, speed: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
+                    <AnimatedSelectTrigger className="text-sm h-8">
+                      <AnimatedSelectValue />
+                    </AnimatedSelectTrigger>
+                    <AnimatedSelectContent>
                       {speedOptions.map((speed) => (
-                        <SelectItem key={speed.id} value={speed.id}>
+                        <AnimatedSelectItem key={speed.id} value={speed.id} textValue={speed.name}>
                           {speed.name}
-                        </SelectItem>
+                        </AnimatedSelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </AnimatedSelectContent>
+                  </AnimatedSelect>
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-1.5">
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="safety"
@@ -304,9 +304,9 @@ export function BacktestConfig() {
                       setConfig({ ...config, safetyMode: checked as boolean })
                     }
                   />
-                  <Label htmlFor="safety" className="flex items-center gap-2 text-sm">
-                    <Shield className="h-4 w-4 text-muted-foreground" />
-                    Enable Safety Mode (Auto stop-loss at -2% per trade)
+                  <Label htmlFor="safety" className="flex items-center gap-1.5 text-[10px] font-normal">
+                    <Shield className="h-3 w-3 text-muted-foreground" />
+                    Safety Mode (Auto stop-loss -2%)
                   </Label>
                 </div>
 
@@ -318,60 +318,58 @@ export function BacktestConfig() {
                       setConfig({ ...config, allowLeverage: checked as boolean })
                     }
                   />
-                  <Label htmlFor="leverage" className="flex items-center gap-2 text-sm">
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    Allow Leverage (Up to 5x - Degen Mode)
+                  <Label htmlFor="leverage" className="flex items-center gap-1.5 text-[10px] font-normal">
+                    <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                    Allow Leverage (Up to 5x)
                   </Label>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Summary Sidebar */}
-        <div className="space-y-4">
-          <Card className="sticky top-4 border-border/50 bg-card/30">
-            <CardHeader>
-              <CardTitle className="text-base">Battle Summary</CardTitle>
+          {/* Battle Summary */}
+          <Card className="border-border/50 bg-card/30">
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-sm">Battle Summary</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3 text-sm">
+            <CardContent className="space-y-2.5 px-3 pb-3">
+              <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Agent</span>
-                  <span className="font-mono">{selectedAgent?.name || "—"}</span>
+                  <span className="text-muted-foreground text-[10px]">Agent</span>
+                  <span className="font-mono text-[10px]">{selectedAgent?.name || "—"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Asset</span>
-                  <span className="font-mono">
+                  <span className="text-muted-foreground text-[10px]">Asset</span>
+                  <span className="font-mono text-[10px]">
                     {assets.find((a) => a.id === config.asset)?.name}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Period</span>
-                  <span className="font-mono">
+                  <span className="text-muted-foreground text-[10px]">Period</span>
+                  <span className="font-mono text-[10px]">
                     {datePresets.find((d) => d.id === config.datePreset)?.name}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Capital</span>
-                  <span className="font-mono">${parseInt(config.capital).toLocaleString()}</span>
+                  <span className="text-muted-foreground text-[10px]">Capital</span>
+                  <span className="font-mono text-[10px]">${parseInt(config.capital).toLocaleString()}</span>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border/50 bg-muted/20 p-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Estimated time:</span>
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-2">
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">Est. time:</span>
                   <span className="font-mono font-medium">~{estimatedTime} min</span>
                 </div>
               </div>
 
               <Button
-                className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-8 text-xs"
                 disabled={!canStart}
                 onClick={handleStartBattle}
               >
-                <Zap className="h-4 w-4" />
+                <Zap className="h-3.5 w-3.5" />
                 Start Battle
               </Button>
             </CardContent>

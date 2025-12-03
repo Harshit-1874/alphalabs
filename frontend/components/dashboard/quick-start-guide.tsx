@@ -65,7 +65,7 @@ export function QuickStartGuide() {
   const currentStep = steps.find((s) => s.status === "current") || steps[0];
 
   return (
-    <Card className="border-[hsl(var(--accent-purple)/0.3)] bg-gradient-to-br from-[hsl(var(--accent-purple)/0.05)] to-transparent">
+    <Card className="border-[hsl(var(--brand-flame)/0.3)] bg-gradient-to-br from-[hsl(var(--brand-flame)/0.05)] to-transparent">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="font-mono text-lg font-semibold">Quick Start Guide</CardTitle>
         <Button
@@ -99,7 +99,7 @@ export function QuickStartGuide() {
                   className={cn(
                     "absolute left-[11px] top-8 h-[calc(100%+8px)] w-0.5",
                     step.status === "complete"
-                      ? "bg-[hsl(var(--accent-purple))]"
+                      ? "bg-[hsl(var(--brand-flame))]"
                       : "bg-border"
                   )}
                 />
@@ -110,7 +110,7 @@ export function QuickStartGuide() {
                 className={cn(
                   "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2",
                   step.status === "complete" &&
-                    "border-[hsl(var(--accent-purple))] bg-[hsl(var(--accent-purple))]",
+                    "border-[hsl(var(--brand-flame))] bg-[hsl(var(--brand-flame))]",
                   step.status === "current" &&
                     "border-primary bg-transparent",
                   step.status === "upcoming" && "border-border bg-transparent"

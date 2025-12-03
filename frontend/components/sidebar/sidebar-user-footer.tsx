@@ -12,14 +12,15 @@ import { useRouter } from "next/navigation";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AnimatedDropdown,
+  AnimatedDropdownContent,
+  AnimatedDropdownItem,
+  AnimatedDropdownLabel,
+  AnimatedDropdownSeparator,
+  AnimatedDropdownTrigger,
+} from "@/components/ui/animated-dropdown";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface SidebarUserFooterProps {
   isCollapsed: boolean;
@@ -29,6 +30,7 @@ export function SidebarUserFooter({ isCollapsed }: SidebarUserFooterProps) {
   const { user, isLoaded } = useUser();
   const { signOut } = useClerk();
   const router = useRouter();
+  const isMobile = useIsMobile();
 
   if (!isLoaded) {
     return (
@@ -59,8 +61,8 @@ export function SidebarUserFooter({ isCollapsed }: SidebarUserFooterProps) {
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <AnimatedDropdown>
+      <AnimatedDropdownTrigger asChild>
         <button
           className={cn(
             "flex w-full items-center gap-3 rounded-lg border border-border/50 bg-muted/30 p-2 transition-colors hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background",
@@ -69,7 +71,7 @@ export function SidebarUserFooter({ isCollapsed }: SidebarUserFooterProps) {
         >
           <Avatar className="h-9 w-9 border border-border/50">
             <AvatarImage src={user?.imageUrl} alt={displayName} />
-            <AvatarFallback className="bg-[hsl(var(--accent-purple))] text-xs font-medium text-white">
+            <AvatarFallback className="bg-[hsl(var(--brand-flame))] text-xs font-medium text-white">
               {initials}
             </AvatarFallback>
           </Avatar>
@@ -88,44 +90,45 @@ export function SidebarUserFooter({ isCollapsed }: SidebarUserFooterProps) {
             </>
           )}
         </button>
-      </DropdownMenuTrigger>
+      </AnimatedDropdownTrigger>
 
-      <DropdownMenuContent
-        align="end"
-        side={isCollapsed ? "right" : "top"}
+      <AnimatedDropdownContent
+        align={isMobile ? "center" : "end"}
+        side={isMobile ? "top" : isCollapsed ? "right" : "bottom"}
         className="w-56"
+        sideOffset={8}
       >
-        <DropdownMenuLabel className="font-normal">
+        <AnimatedDropdownLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">{displayName}</p>
             <p className="text-xs leading-none text-muted-foreground">
               {email}
             </p>
           </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
+        </AnimatedDropdownLabel>
+        <AnimatedDropdownSeparator />
+        <AnimatedDropdownItem onSelect={() => router.push("/dashboard/settings")}>
           <User className="mr-2 h-4 w-4" />
           Profile
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
+        </AnimatedDropdownItem>
+        <AnimatedDropdownItem onSelect={() => router.push("/dashboard/settings")}>
           <CreditCard className="mr-2 h-4 w-4" />
           Billing
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/dashboard/settings/api-keys")}>
+        </AnimatedDropdownItem>
+        <AnimatedDropdownItem onSelect={() => router.push("/dashboard/settings/api-keys")}>
           <Key className="mr-2 h-4 w-4" />
           API Keys
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={handleSignOut}
-          className="text-destructive focus:text-destructive"
+        </AnimatedDropdownItem>
+        <AnimatedDropdownSeparator />
+        <AnimatedDropdownItem
+          onSelect={handleSignOut}
+          destructive
         >
           <LogOut className="mr-2 h-4 w-4" />
           Sign Out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </AnimatedDropdownItem>
+      </AnimatedDropdownContent>
+    </AnimatedDropdown>
   );
 }
 

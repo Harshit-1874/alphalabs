@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,12 @@ export default function DataExportSettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">Data Export</CardTitle>
@@ -188,7 +194,7 @@ export default function DataExportSettingsPage() {
           Export Selected Data
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -1,18 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 
 export default function PreferencesSettingsPage() {
   const [preferences, setPreferences] = useState({
@@ -25,7 +26,12 @@ export default function PreferencesSettingsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">Default Settings</CardTitle>
@@ -38,40 +44,40 @@ export default function PreferencesSettingsPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Default Asset</Label>
-              <Select
+              <AnimatedSelect
                 value={preferences.defaultAsset}
                 onValueChange={(value) =>
                   setPreferences({ ...preferences, defaultAsset: value })
                 }
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="btc-usdt">BTC/USDT</SelectItem>
-                  <SelectItem value="eth-usdt">ETH/USDT</SelectItem>
-                  <SelectItem value="sol-usdt">SOL/USDT</SelectItem>
-                </SelectContent>
-              </Select>
+                <AnimatedSelectTrigger>
+                  <AnimatedSelectValue />
+                </AnimatedSelectTrigger>
+                <AnimatedSelectContent>
+                  <AnimatedSelectItem value="btc-usdt">BTC/USDT</AnimatedSelectItem>
+                  <AnimatedSelectItem value="eth-usdt">ETH/USDT</AnimatedSelectItem>
+                  <AnimatedSelectItem value="sol-usdt">SOL/USDT</AnimatedSelectItem>
+                </AnimatedSelectContent>
+              </AnimatedSelect>
             </div>
             <div className="space-y-2">
               <Label>Default Timeframe</Label>
-              <Select
+              <AnimatedSelect
                 value={preferences.defaultTimeframe}
                 onValueChange={(value) =>
                   setPreferences({ ...preferences, defaultTimeframe: value })
                 }
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="15m">15 Minutes</SelectItem>
-                  <SelectItem value="1h">1 Hour</SelectItem>
-                  <SelectItem value="4h">4 Hours</SelectItem>
-                  <SelectItem value="1d">1 Day</SelectItem>
-                </SelectContent>
-              </Select>
+                <AnimatedSelectTrigger>
+                  <AnimatedSelectValue />
+                </AnimatedSelectTrigger>
+                <AnimatedSelectContent>
+                  <AnimatedSelectItem value="15m">15 Minutes</AnimatedSelectItem>
+                  <AnimatedSelectItem value="1h">1 Hour</AnimatedSelectItem>
+                  <AnimatedSelectItem value="4h">4 Hours</AnimatedSelectItem>
+                  <AnimatedSelectItem value="1d">1 Day</AnimatedSelectItem>
+                </AnimatedSelectContent>
+              </AnimatedSelect>
             </div>
           </div>
 
@@ -89,22 +95,22 @@ export default function PreferencesSettingsPage() {
 
           <div className="space-y-2">
             <Label>Default Playback Speed (Backtest)</Label>
-            <Select
+            <AnimatedSelect
               value={preferences.defaultSpeed}
               onValueChange={(value) =>
                 setPreferences({ ...preferences, defaultSpeed: value })
               }
             >
-              <SelectTrigger className="max-w-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="slow">Slow (1s/candle)</SelectItem>
-                <SelectItem value="normal">Normal (500ms/candle)</SelectItem>
-                <SelectItem value="fast">Fast (200ms/candle)</SelectItem>
-                <SelectItem value="instant">Instant</SelectItem>
-              </SelectContent>
-            </Select>
+              <AnimatedSelectTrigger className="max-w-xs">
+                <AnimatedSelectValue />
+              </AnimatedSelectTrigger>
+              <AnimatedSelectContent>
+                <AnimatedSelectItem value="slow">Slow (1s/candle)</AnimatedSelectItem>
+                <AnimatedSelectItem value="normal">Normal (500ms/candle)</AnimatedSelectItem>
+                <AnimatedSelectItem value="fast">Fast (200ms/candle)</AnimatedSelectItem>
+                <AnimatedSelectItem value="instant">Instant</AnimatedSelectItem>
+              </AnimatedSelectContent>
+            </AnimatedSelect>
           </div>
         </CardContent>
       </Card>
@@ -161,7 +167,7 @@ export default function PreferencesSettingsPage() {
           Save Preferences
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -4,16 +4,17 @@ import { History, Edit, MoreVertical, Copy, FileDown, Trash2, Bot } from "lucide
 import { Crosshair, Eye } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "motion/react";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AnimatedDropdown,
+  AnimatedDropdownContent,
+  AnimatedDropdownItem,
+  AnimatedDropdownSeparator,
+  AnimatedDropdownTrigger,
+} from "@/components/ui/animated-dropdown";
 import { cn } from "@/lib/utils";
 
 interface Agent {
@@ -65,7 +66,7 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
                 className={cn(
                   "text-[10px] gap-1",
                   agent.mode === "monk"
-                    ? "border-[hsl(var(--accent-purple)/0.3)] text-[hsl(var(--accent-purple))]"
+                    ? "border-[hsl(var(--brand-lavender)/0.3)] text-[hsl(var(--brand-lavender))]"
                     : "border-primary/30 text-primary"
                 )}
               >
@@ -103,22 +104,34 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
 
           {/* Actions */}
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => router.push(`/dashboard/arena/backtest?agent=${agent.id}`)}
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
             >
-              <History className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => router.push(`/dashboard/agents/${agent.id}/edit`)}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => router.push(`/dashboard/arena/backtest?agent=${agent.id}`)}
+              >
+                <History className="h-4 w-4" />
+              </Button>
+            </motion.div>
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 17 }}
             >
-              <Edit className="h-4 w-4" />
-            </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => router.push(`/dashboard/agents/${agent.id}/edit`)}
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+            </motion.div>
             <AgentMoreMenu agentId={agent.id} agentName={agent.name} />
           </div>
         </CardContent>
@@ -156,7 +169,7 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
             className={cn(
               "mb-2 gap-1.5",
               agent.mode === "monk"
-                ? "border-[hsl(var(--accent-purple)/0.3)] bg-[hsl(var(--accent-purple)/0.1)] text-[hsl(var(--accent-purple))]"
+                ? "border-[hsl(var(--brand-lavender)/0.3)] bg-[hsl(var(--brand-lavender)/0.1)] text-[hsl(var(--brand-lavender))]"
                 : "border-primary/30 bg-primary/10 text-primary"
             )}
           >
@@ -199,24 +212,38 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
         className="gap-2 border-t border-border/50 pt-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1 gap-1"
-          onClick={() => router.push(`/dashboard/arena/backtest?agent=${agent.id}`)}
+        <motion.div
+          className="flex-1"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
         >
-          <History className="h-3 w-3" />
-          Backtest
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="flex-1 gap-1"
-          onClick={() => router.push(`/dashboard/agents/${agent.id}/edit`)}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-1"
+            onClick={() => router.push(`/dashboard/arena/backtest?agent=${agent.id}`)}
+          >
+            <History className="h-3 w-3" />
+            Backtest
+          </Button>
+        </motion.div>
+        <motion.div
+          className="flex-1"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.95 }}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
         >
-          <Edit className="h-3 w-3" />
-          Edit
-        </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full gap-1"
+            onClick={() => router.push(`/dashboard/agents/${agent.id}/edit`)}
+          >
+            <Edit className="h-3 w-3" />
+            Edit
+          </Button>
+        </motion.div>
       </CardFooter>
     </Card>
   );
@@ -224,28 +251,28 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
 
 function AgentMoreMenu({ agentId, agentName }: { agentId: string; agentName: string }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <AnimatedDropdown>
+      <AnimatedDropdownTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8">
           <MoreVertical className="h-4 w-4" />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem>
+      </AnimatedDropdownTrigger>
+      <AnimatedDropdownContent align="end">
+        <AnimatedDropdownItem onSelect={() => console.log("Duplicate", agentId)}>
           <Copy className="mr-2 h-4 w-4" />
           Duplicate Agent
-        </DropdownMenuItem>
-        <DropdownMenuItem>
+        </AnimatedDropdownItem>
+        <AnimatedDropdownItem onSelect={() => console.log("Export", agentId)}>
           <FileDown className="mr-2 h-4 w-4" />
           Export Config
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive focus:text-destructive">
+        </AnimatedDropdownItem>
+        <AnimatedDropdownSeparator />
+        <AnimatedDropdownItem destructive onSelect={() => console.log("Delete", agentId)}>
           <Trash2 className="mr-2 h-4 w-4" />
           Delete Agent
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </AnimatedDropdownItem>
+      </AnimatedDropdownContent>
+    </AnimatedDropdown>
   );
 }
 

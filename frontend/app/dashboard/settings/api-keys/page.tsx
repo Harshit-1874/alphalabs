@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { Key, Plus, Eye, EyeOff, RefreshCw, Edit, Trash2, ExternalLink, Check, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,12 +18,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +74,12 @@ export default function ApiKeysSettingsPage() {
   const [showKey, setShowKey] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      className="space-y-6"
+      initial={{ opacity: 0, y: 20, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30, mass: 0.8 }}
+    >
       <Card className="border-border/50 bg-card/30">
         <CardHeader>
           <CardTitle className="text-lg">API Key Security</CardTitle>
@@ -108,20 +114,20 @@ export default function ApiKeysSettingsPage() {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label>Provider</Label>
-                  <Select
+                  <AnimatedSelect
                     value={newKey.provider}
                     onValueChange={(value) => setNewKey({ ...newKey, provider: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="anthropic" disabled>
+                    <AnimatedSelectTrigger>
+                      <AnimatedSelectValue />
+                    </AnimatedSelectTrigger>
+                    <AnimatedSelectContent>
+                      <AnimatedSelectItem value="openrouter">OpenRouter</AnimatedSelectItem>
+                      <AnimatedSelectItem value="anthropic" disabled>
                         Anthropic (Coming soon)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                      </AnimatedSelectItem>
+                    </AnimatedSelectContent>
+                  </AnimatedSelect>
                 </div>
                 <div className="space-y-2">
                   <Label>Label (Optional)</Label>
@@ -285,7 +291,7 @@ export default function ApiKeysSettingsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </motion.div>
   );
 }
 

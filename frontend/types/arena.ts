@@ -81,6 +81,9 @@ export interface Trade {
   entryTime: Date;
   exitTime: Date;
   reasoning: string;
+  confidence?: number;
+  stopLoss?: number;
+  takeProfit?: number;
 }
 
 export interface AIThought {

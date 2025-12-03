@@ -154,7 +154,7 @@ export function CertificatePreview({ result, agentName }: CertificatePreviewProp
             {/* Agent Name */}
             <div className="mb-8">
               <div className="inline-flex items-center gap-3 rounded-lg border border-border/50 bg-card/30 px-6 py-4">
-                <Bot className="h-8 w-8 text-[hsl(var(--accent-purple))]" />
+                <Bot className="h-8 w-8 text-[hsl(var(--brand-flame))]" />
                 <span className="font-mono text-2xl font-bold text-white">{agentName}</span>
               </div>
             </div>

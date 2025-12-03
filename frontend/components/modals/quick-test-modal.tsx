@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, Bot, History, Play } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Dialog,
   DialogContent,
@@ -12,12 +13,12 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AnimatedSelect,
+  AnimatedSelectContent,
+  AnimatedSelectItem,
+  AnimatedSelectTrigger,
+  AnimatedSelectValue,
+} from "@/components/ui/animated-select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -46,7 +47,18 @@ export function QuickTestModal({ open, onOpenChange }: QuickTestModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] overflow-hidden p-0 gap-0">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.9, opacity: 0, y: 20 }}
+          transition={{ 
+            type: "spring", 
+            stiffness: 350, 
+            damping: 30,
+            mass: 0.8
+          }}
+          className="p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
@@ -61,18 +73,18 @@ export function QuickTestModal({ open, onOpenChange }: QuickTestModalProps) {
           {/* Agent Selection */}
           <div className="space-y-2">
             <Label>Select Agent</Label>
-            <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose an agent..." />
-              </SelectTrigger>
-              <SelectContent>
+            <AnimatedSelect value={selectedAgent} onValueChange={setSelectedAgent}>
+              <AnimatedSelectTrigger>
+                <AnimatedSelectValue placeholder="Choose an agent..." />
+              </AnimatedSelectTrigger>
+              <AnimatedSelectContent>
                 {agents.length === 0 ? (
                   <div className="p-4 text-center text-sm text-muted-foreground">
                     No agents yet. Create one first!
                   </div>
                 ) : (
                   agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
+                    <AnimatedSelectItem key={agent.id} value={agent.id} textValue={agent.name}>
                       <div className="flex items-center gap-2">
                         <Bot className="h-4 w-4" />
                         <span className="font-mono">{agent.name}</span>
@@ -80,11 +92,11 @@ export function QuickTestModal({ open, onOpenChange }: QuickTestModalProps) {
                           {agent.mode}
                         </Badge>
                       </div>
-                    </SelectItem>
+                    </AnimatedSelectItem>
                   ))
                 )}
-              </SelectContent>
-            </Select>
+              </AnimatedSelectContent>
+            </AnimatedSelect>
           </div>
 
           {/* Test Type Selection */}
@@ -148,6 +160,7 @@ export function QuickTestModal({ open, onOpenChange }: QuickTestModalProps) {
             Start {testType === "backtest" ? "Backtest" : "Forward Test"}
           </Button>
         </div>
+        </motion.div>
       </DialogContent>
     </Dialog>
   );
