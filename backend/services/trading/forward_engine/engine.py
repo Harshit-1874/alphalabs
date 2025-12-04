@@ -36,6 +36,8 @@ from datetime import datetime
 from typing import Dict, Optional, Any, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from models.agent import Agent
 from services.market_data_service import MarketDataService
@@ -143,6 +145,18 @@ class ForwardEngine:
         try:
             # Create a new session for initialization
             async with self.session_factory() as db:
+                # Reload agent with api_key relationship to avoid lazy loading issues
+                # This ensures we have fresh data in the proper async context
+                agent_id = agent.id
+                agent_result = await db.execute(
+                    select(Agent)
+                    .options(selectinload(Agent.api_key))
+                    .where(Agent.id == agent_id)
+                )
+                agent = agent_result.scalar_one_or_none()
+                if not agent:
+                    raise ValidationError(f"Agent not found: {agent_id}")
+                
                 # Validate parameters
                 self._validate_parameters(asset, timeframe, starting_capital)
                 

@@ -17,6 +17,7 @@ from sqlalchemy import select
 from auth import verify_clerk_token, get_user_id_from_token
 from database import async_session_maker
 from models.arena import TestSession
+from models.user import User
 from websocket.events import create_error_event, create_heartbeat_event, Event
 from websocket.manager import websocket_manager
 from services.trading.engine_factory import get_backtest_engine, get_forward_engine
@@ -42,9 +43,13 @@ async def authenticate_websocket(token: Optional[str]) -> Optional[str]:
     return None
 
 
-async def _load_authorized_session(session_id: str, user_id: str) -> Optional[TestSession]:
+async def _load_authorized_session(session_id: str, clerk_user_id: str) -> Optional[TestSession]:
     """
     Ensure the requested session exists and belongs to the connected user.
+    
+    Args:
+        session_id: Test session UUID
+        clerk_user_id: Clerk user ID (string, not UUID)
     """
     try:
         session_uuid = UUID(session_id)
@@ -53,10 +58,21 @@ async def _load_authorized_session(session_id: str, user_id: str) -> Optional[Te
         return None
     
     async with async_session_maker() as db:
+        # First, find the User by clerk_id to get the UUID
+        user_result = await db.execute(
+            select(User).where(User.clerk_id == clerk_user_id)
+        )
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            logger.warning(f"User not found for clerk_id: {clerk_user_id}")
+            return None
+        
+        # Now query the session using the User's UUID
         result = await db.execute(
             select(TestSession).where(
                 TestSession.id == session_uuid,
-                TestSession.user_id == user_id
+                TestSession.user_id == user.id
             )
         )
         return result.scalar_one_or_none()

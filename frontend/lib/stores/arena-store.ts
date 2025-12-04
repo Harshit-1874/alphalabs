@@ -47,6 +47,19 @@ interface ArenaState {
   addThought: (sessionId: string, thought: AIThought) => void;
   updateSessionStats: (sessionId: string, stats: { equity?: number; pnl?: number; status?: string; currentCandle?: number; totalCandles?: number }) => void;
   clearSessionData: (sessionId: string) => void;
+  seedSessionData: (
+    sessionId: string,
+    payload: Partial<{
+      candles: CandleData[];
+      trades: Trade[];
+      thoughts: AIThought[];
+      equity: number;
+      pnl: number;
+      status: string;
+      currentCandle: number;
+      totalCandles: number;
+    }>
+  ) => void;
   
   // Live sessions
   addLiveSession: (session: LiveSession) => void;
@@ -221,6 +234,28 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
     set((state) => {
       const { [sessionId]: _, ...rest } = state.sessionData;
       return { sessionData: rest };
+    }),
+  seedSessionData: (sessionId, payload) =>
+    set((state) => {
+      const session = state.sessionData[sessionId] || {
+        candles: [],
+        trades: [],
+        thoughts: [],
+        equity: 0,
+        pnl: 0,
+        status: "running",
+        currentCandle: 0,
+        totalCandles: 0,
+      };
+      return {
+        sessionData: {
+          ...state.sessionData,
+          [sessionId]: {
+            ...session,
+            ...payload,
+          },
+        },
+      };
     }),
   
   // Live sessions

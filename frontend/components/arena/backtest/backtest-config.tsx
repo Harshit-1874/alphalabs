@@ -26,7 +26,7 @@ export function BacktestConfig() {
   const searchParams = useSearchParams();
   const preselectedAgent = searchParams.get("agent");
   const { agents } = useAgentsStore();
-  const { setBacktestConfig } = useArenaStore();
+  const { setBacktestConfig, seedSessionData } = useArenaStore();
   const { assets, timeframes, datePresets, playbackSpeeds, isLoading, error: catalogError } =
     useArenaCatalogs();
   const { startBacktest } = useArenaApi();
@@ -77,9 +77,17 @@ export function BacktestConfig() {
       setFormError("Please select an agent, asset, and timeframe.");
       return;
     }
+    const usingCustomDates = config.datePreset === "custom";
+    if (usingCustomDates && (!config.startDate || !config.endDate)) {
+      setFormError("Please select both start and end dates for custom date range.");
+      return;
+    }
+    if (usingCustomDates && config.startDate && config.endDate && config.startDate >= config.endDate) {
+      setFormError("Start date must be before end date.");
+      return;
+    }
     setFormError(null);
     setIsSubmitting(true);
-    const usingCustomDates = config.datePreset === "custom";
     try {
       const session = await startBacktest({
         agent_id: config.agentId,
@@ -106,6 +114,17 @@ export function BacktestConfig() {
         safetyMode: config.safetyMode,
         allowLeverage: config.allowLeverage,
       });
+      
+      if (session.previewCandles?.length) {
+        seedSessionData(session.id, {
+          candles: session.previewCandles,
+          totalCandles: session.previewCandles.length,
+          currentCandle: session.previewCandles.length - 1,
+          equity: Number(config.capital),
+          pnl: 0,
+          status: "running",
+        });
+      }
 
       router.push(`/dashboard/arena/backtest/${session.id}`);
     } catch (err) {
@@ -117,7 +136,12 @@ export function BacktestConfig() {
   };
 
   const canStart =
-    !!config.agentId && !!config.asset && !!config.timeframe && !!config.capital && !isLoading;
+    !!config.agentId && 
+    !!config.asset && 
+    !!config.timeframe && 
+    !!config.capital && 
+    !isLoading &&
+    (config.datePreset !== "custom" || (!!config.startDate && !!config.endDate));
 
   if (isLoading && assets.length === 0 && timeframes.length === 0) {
     return (
@@ -286,8 +310,34 @@ export function BacktestConfig() {
                     </Button>
                   ))}
                 </div>
+              {config.datePreset === "custom" && (
+                <div className="grid gap-2 sm:grid-cols-2 mt-2">
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Start Date</Label>
+                    <Input
+                      type="date"
+                      value={config.startDate}
+                      onChange={(e) => setConfig({ ...config, startDate: e.target.value })}
+                      className="h-7 text-xs"
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">End Date</Label>
+                    <Input
+                      type="date"
+                      value={config.endDate}
+                      onChange={(e) => setConfig({ ...config, endDate: e.target.value })}
+                      className="h-7 text-xs"
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                </div>
+              )}
               <p className="text-[10px] text-muted-foreground">
-                  ~{estimatedCandles} candles • {config.timeframe} timeframe
+                  {config.datePreset === "custom" 
+                    ? "Select start and end dates" 
+                    : `~${estimatedCandles} candles • ${config.timeframe} timeframe`}
                 </p>
               </div>
             </CardContent>

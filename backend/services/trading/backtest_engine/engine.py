@@ -28,10 +28,12 @@ Usage:
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Dict, Optional
+from datetime import datetime, date
+from typing import Dict, Optional, Union
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from models.agent import Agent
 from services.market_data_service import MarketDataService
@@ -96,8 +98,8 @@ class BacktestEngine:
         agent: Agent,
         asset: str,
         timeframe: str,
-        start_date: datetime,
-        end_date: datetime,
+        start_date: Union[datetime, date],
+        end_date: Union[datetime, date],
         starting_capital: float,
         safety_mode: bool = True,
         allow_leverage: bool = False,
@@ -122,9 +124,12 @@ class BacktestEngine:
             ValidationError: If parameters are invalid
             Exception: If data loading or initialization fails
         """
-        # Handle both date and datetime objects
-        start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
-        end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
+        # Normalize to datetime objects (handles date inputs from API)
+        start_dt = self._coerce_to_datetime(start_date, "start_date")
+        end_dt = self._coerce_to_datetime(end_date, "end_date")
+        
+        start_date_str = start_dt.date()
+        end_date_str = end_dt.date()
         
         logger.info(
             f"Starting backtest: session_id={session_id}, "
@@ -135,8 +140,20 @@ class BacktestEngine:
         try:
             # Create a new session for initialization
             async with self.session_factory() as db:
+                # Reload agent with api_key relationship to avoid lazy loading issues
+                # This ensures we have fresh data in the proper async context
+                agent_id = agent.id
+                agent_result = await db.execute(
+                    select(Agent)
+                    .options(selectinload(Agent.api_key))
+                    .where(Agent.id == agent_id)
+                )
+                agent = agent_result.scalar_one_or_none()
+                if not agent:
+                    raise ValidationError(f"Agent not found: {agent_id}")
+                
                 # Validate parameters
-                self._validate_parameters(asset, timeframe, start_date, end_date, starting_capital)
+                self._validate_parameters(asset, timeframe, start_dt, end_dt, starting_capital)
                 
                 # Update session status to initializing
                 await self.database_manager.update_session_status(db, session_id, "initializing")
@@ -147,13 +164,11 @@ class BacktestEngine:
                 candles = await market_data_service.get_historical_data(
                     asset=asset,
                     timeframe=timeframe,
-                    start_date=start_date,
-                    end_date=end_date
+                    start_date=start_dt,
+                    end_date=end_dt
                 )
             
             if not candles:
-                start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
-                end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
                 raise ValidationError(
                     f"No historical data available for {asset} {timeframe} "
                     f"from {start_date_str} to {end_date_str}"
@@ -239,6 +254,17 @@ class BacktestEngine:
                 await self.database_manager.update_session_status(db, session_id, "failed")
             await self.broadcaster.broadcast_error(session_id, str(e))
             raise
+    
+    @staticmethod
+    def _coerce_to_datetime(value: Union[datetime, date], field_name: str) -> datetime:
+        """
+        Ensure incoming values are datetime objects.
+        """
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, date):
+            return datetime.combine(value, datetime.min.time())
+        raise ValidationError(f"{field_name} must be a date or datetime, got {type(value).__name__}")
     
     def _validate_parameters(
         self,

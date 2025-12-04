@@ -118,9 +118,14 @@ class WebSocketManager:
         # Close the WebSocket if still open
         if websocket:
             try:
-                await websocket.close()
+                # Check if WebSocket is still open before closing
+                # WebSocket has a 'client_state' attribute that indicates connection state
+                if hasattr(websocket, 'client_state') and websocket.client_state.name != 'DISCONNECTED':
+                    await websocket.close()
             except Exception as e:
-                logger.warning(f"Error closing WebSocket: {e}")
+                # Ignore errors if connection is already closed
+                if "already closed" not in str(e).lower() and "websocket.close" not in str(e):
+                    logger.warning(f"Error closing WebSocket: {e}")
         
         # Remove from session mapping
         if session_id and session_id in self.session_connections:

@@ -15,6 +15,13 @@ import {
   AnimatedSelectValue,
 } from "@/components/ui/animated-select";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { AgentFormData, StepModelApiProps } from "@/types/agent";
 import { useApiKeys } from "@/hooks/use-api-keys";
 import { useModels } from "@/hooks/use-models";
@@ -34,8 +41,11 @@ const providerMetaLabel = (modelProvider: string, speed: string, context: string
 type ValidationStatus = "idle" | "validating" | "valid" | "invalid";
 
 export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
-  const { apiKeys, isLoading: isLoadingKeys } = useApiKeys();
-  const { validateApiKey: validateKeyApi } = useApiKeys();
+  const {
+    apiKeys,
+    isLoading: isLoadingKeys,
+    validateApiKey: validateExistingKey,
+  } = useApiKeys();
   const {
     models,
     isLoading: modelsLoading,
@@ -53,13 +63,16 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
     try {
       // If it's a new key (raw string), validate it
       if (formData.apiKey.startsWith("sk-")) {
-        const result = await validateKeyApi(formData.apiKey, "openrouter");
-        setValidationStatus(result.valid ? "valid" : "invalid");
+        if (!formData.apiKey.startsWith("sk-or-v1-")) {
+          setValidationStatus("invalid");
+          return;
+        }
+        // Basic client-side format validation for new keys
+        setValidationStatus("valid");
       } else {
         // It's an existing key ID, assume valid if it exists in list
-        // Or we could re-validate, but that requires the key value which we don't have for existing keys
-        // So we just check if it's selected
-        setValidationStatus("valid");
+        const result = await validateExistingKey(formData.apiKey);
+        setValidationStatus(result.valid ? "valid" : "invalid");
       }
     } catch (error) {
       setValidationStatus("invalid");
@@ -78,14 +91,17 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
       providerIconMap[model.provider?.toLowerCase()] || Atom;
     return (
       <span className="flex items-center gap-2">
-        <IconComponent size={18} weight="duotone" className="text-primary" />
+        <span className="text-primary">
+          <IconComponent size={18} weight="duotone" />
+        </span>
         <span>{model.name}</span>
       </span>
     );
   };
 
   // Filter keys for OpenRouter (since that's what we support for now)
-  const openRouterKeys = apiKeys.filter(k => k.provider === "openrouter");
+  const openRouterKeys = apiKeys.filter((k) => k.provider === "openrouter");
+  const modelSelectDisabled = modelsLoading && models.length === 0;
 
   return (
     <div className="space-y-6">
@@ -94,21 +110,22 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
         <Label className="text-sm font-medium">
           Select AI Model <span className="text-destructive">*</span>
         </Label>
-        <AnimatedSelect
-          value={formData.model}
-          onValueChange={(value) => updateFormData({ model: value })}
-          disabled={modelsLoading && models.length === 0}
-        >
-          <AnimatedSelectTrigger className="w-full h-10">
-            {selectedModel
-              ? renderModelOption(selectedModel.id)
-              : modelsLoading
-              ? "Loading models..."
-              : modelsError
-              ? "Failed to load models"
-              : <AnimatedSelectValue placeholder="Select a model..." />}
-          </AnimatedSelectTrigger>
-          <AnimatedSelectContent>
+        <div className="relative">
+          <AnimatedSelect
+            value={formData.model}
+            onValueChange={(value) => updateFormData({ model: value })}
+            className={modelSelectDisabled ? "opacity-70 cursor-not-allowed" : undefined}
+          >
+            <AnimatedSelectTrigger className="w-full h-10">
+              {selectedModel
+                ? renderModelOption(selectedModel.id)
+                : modelsLoading
+                ? "Loading models..."
+                : modelsError
+                ? "Failed to load models"
+                : <AnimatedSelectValue placeholder="Select a model..." />}
+            </AnimatedSelectTrigger>
+            <AnimatedSelectContent>
             {modelsLoading && models.length === 0 ? (
               <div className="p-4 text-center text-sm text-muted-foreground">
                 Loading models...
@@ -124,6 +141,10 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
                   Retry
                 </Button>
               </div>
+            ) : !modelsLoading && models.length === 0 ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">
+                No models available. Configure providers in the backend.
+              </div>
             ) : (
               models.map((model) => {
                 const IconComponent =
@@ -131,15 +152,21 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
                 return (
                   <AnimatedSelectItem key={model.id} value={model.id} className="py-3">
                     <div className="flex items-center gap-2">
-                      <IconComponent size={18} weight="duotone" className="text-primary" />
+                      <span className="text-primary">
+                        <IconComponent size={18} weight="duotone" />
+                      </span>
                       <span className="font-medium">{model.name}</span>
                     </div>
                   </AnimatedSelectItem>
                 );
               })
             )}
-          </AnimatedSelectContent>
-        </AnimatedSelect>
+            </AnimatedSelectContent>
+          </AnimatedSelect>
+          {modelSelectDisabled && (
+            <div className="pointer-events-auto absolute inset-0 rounded-md" />
+          )}
+        </div>
       </div>
 
       {/* Selected Model Info */}
@@ -156,10 +183,14 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
             <div>
               <p className="font-mono text-sm font-medium">{selectedModel.name}</p>
               <p className="text-xs text-muted-foreground">
-                {selectedModel.best_for}
+                {selectedModel.description}
               </p>
               <p className="text-xs text-muted-foreground/60">
-                {providerMetaLabel(selectedModel.provider, selectedModel.speed, selectedModel.contextWindow)}
+                {providerMetaLabel(
+                  selectedModel.provider,
+                  selectedModel.capabilities?.join(", ") || "—",
+                  selectedModel.contextWindow
+                )}
               </p>
             </div>
           </div>
@@ -199,7 +230,7 @@ export function StepModelApi({ formData, updateFormData }: StepModelApiProps) {
             <SelectContent>
               {openRouterKeys.map((key) => (
                 <SelectItem key={key.id} value={key.id}>
-                  {key.label || key.api_key_masked}
+                  {key.label || key.key_prefix}
                 </SelectItem>
               ))}
             </SelectContent>

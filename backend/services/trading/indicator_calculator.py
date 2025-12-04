@@ -40,8 +40,17 @@ class IndicatorCalculator:
     MOMENTUM_INDICATORS = ['rsi', 'stoch', 'cci', 'mom', 'ao']
     TREND_INDICATORS = ['macd', 'ema_20', 'ema_50', 'ema_200', 'sma_20', 'sma_50', 'sma_200', 'adx', 'psar']
     VOLATILITY_INDICATORS = ['bbands', 'atr', 'kc', 'donchian']
-    VOLUME_INDICATORS = ['obv', 'vwap', 'mfi', 'cmf']
+    VOLUME_INDICATORS = ['obv', 'vwap', 'mfi', 'cmf', 'ad_line']
     ADVANCED_INDICATORS = ['supertrend', 'ichimoku', 'zscore']
+    INDICATOR_ALIAS_MAP: Dict[str, List[str]] = {
+        'stochastic': ['stoch'],
+        'ema': ['ema_20', 'ema_50', 'ema_200'],
+        'sma': ['sma_20', 'sma_50', 'sma_200'],
+        'bb': ['bbands'],
+        'keltner': ['kc'],
+        'dc': ['donchian'],
+        'ad': ['ad_line'],
+    }
     
     ALL_INDICATORS = (
         MOMENTUM_INDICATORS + 
@@ -80,8 +89,9 @@ class IndicatorCalculator:
         if self.mode not in ['monk', 'omni']:
             raise ValueError(f"Invalid mode: {mode}. Must be 'monk' or 'omni'")
         
+        normalized = self._normalize_indicators(enabled_indicators)
         # Validate and filter enabled indicators based on mode
-        self.enabled_indicators = self._validate_indicators(enabled_indicators)
+        self.enabled_indicators = self._validate_indicators(normalized)
         
         # Convert candles to DataFrame
         self.df = self._candles_to_dataframe(candles)
@@ -93,6 +103,26 @@ class IndicatorCalculator:
             # Initialize and calculate custom indicators if provided
             if self.custom_indicator_rules:
                 self._initialize_custom_indicators()
+    
+    def _normalize_indicators(self, enabled_indicators: List[str]) -> List[str]:
+        normalized: List[str] = []
+        for indicator in enabled_indicators or []:
+            key = indicator.strip().lower()
+            if not key:
+                continue
+            mapped = self.INDICATOR_ALIAS_MAP.get(key)
+            if mapped:
+                normalized.extend(mapped)
+            else:
+                normalized.append(key)
+        # remove duplicates preserve order
+        seen = set()
+        deduped: List[str] = []
+        for indicator in normalized:
+            if indicator not in seen:
+                deduped.append(indicator)
+                seen.add(indicator)
+        return deduped
     
     def _validate_indicators(self, enabled_indicators: List[str]) -> List[str]:
         """
@@ -280,6 +310,12 @@ class IndicatorCalculator:
             self.cache['cmf'] = ta.volume.ChaikinMoneyFlowIndicator(
                 self.df['high'], self.df['low'], self.df['close'], self.df['volume']
             ).chaikin_money_flow()
+        
+        if 'ad_line' in self.enabled_indicators:
+            # Accumulation/Distribution Line
+            self.cache['ad_line'] = ta.volume.AccDistIndexIndicator(
+                self.df['high'], self.df['low'], self.df['close'], self.df['volume']
+            ).acc_dist_index()
         
         # ADVANCED INDICATORS
         

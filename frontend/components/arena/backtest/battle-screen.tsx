@@ -297,7 +297,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   useEffect(() => {
     if (sessionState) {
       setSessionStatus((prev) => ({
-        ...prev,
+        ...(prev ?? {}),
         status: sessionState.status,
         current_candle: sessionState.currentCandle,
         total_candles: sessionState.totalCandles,

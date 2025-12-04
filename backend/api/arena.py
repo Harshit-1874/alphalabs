@@ -8,6 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case
+from sqlalchemy.orm import selectinload
 
 from database import get_db
 from schemas.arena_schemas import (
@@ -17,12 +18,14 @@ from schemas.arena_schemas import (
     ForwardStartRequest, ForwardStartResponse, ForwardSessionResponse,
     ForwardActiveSession, ForwardActiveListResponse, ForwardStatusWrapper, ForwardStopResponse
 )
+from schemas.data_schemas import CandleSchema
 from models.agent import Agent
 from models.arena import TestSession, Trade
 from models.result import TestResult
 from services.trading.backtest_engine import BacktestEngine
 from services.trading.forward_engine import ForwardEngine
 from services.trading.engine_factory import get_backtest_engine, get_forward_engine
+from services.market_data_service import MarketDataService
 from config import settings
 from api.users import get_current_user
 
@@ -337,8 +340,11 @@ async def start_backtest(
 ):
     """Start a new backtest session."""
     # Verify agent exists and belongs to user
+    # Eagerly load api_key relationship to avoid lazy loading issues in background task
     result = await db.execute(
-        select(Agent).where(Agent.id == request.agent_id, Agent.user_id == current_user.id)
+        select(Agent)
+        .options(selectinload(Agent.api_key))
+        .where(Agent.id == request.agent_id, Agent.user_id == current_user.id)
     )
     agent = result.scalar_one_or_none()
     if not agent:
@@ -348,19 +354,27 @@ async def start_backtest(
     session_id = uuid.uuid4()
     
     # Calculate dates if preset is used
-    start_date = request.start_date
-    end_date = request.end_date
+    start_date_input = request.start_date
+    end_date_input = request.end_date
     
     if request.date_preset and request.date_preset != 'custom':
-        start_date, end_date = _resolve_date_preset(request.date_preset)
+        start_date_input, end_date_input = _resolve_date_preset(request.date_preset)
             
-    if not start_date or not end_date:
+    if not start_date_input or not end_date_input:
         raise HTTPException(status_code=400, detail="Start and end dates required")
     
-    if isinstance(start_date, datetime):
-        start_date = start_date.date()
-    if isinstance(end_date, datetime):
-        end_date = end_date.date()
+    if isinstance(start_date_input, datetime):
+        start_dt = start_date_input
+    else:
+        start_dt = datetime.combine(start_date_input, datetime.min.time())
+    
+    if isinstance(end_date_input, datetime):
+        end_dt = end_date_input
+    else:
+        end_dt = datetime.combine(end_date_input, datetime.min.time())
+    
+    start_date = start_dt.date()
+    end_date = end_dt.date()
 
     # Create TestSession in DB
     test_session = TestSession(
@@ -393,12 +407,38 @@ async def start_backtest(
         agent=agent,
         asset=request.asset,
         timeframe=request.timeframe,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=start_dt,
+        end_date=end_dt,
         starting_capital=request.starting_capital,
         safety_mode=request.safety_mode,
         allow_leverage=request.allow_leverage,
     )
+
+    preview_candles = None
+    try:
+        market_data_service = MarketDataService(db)
+        preview_raw = await market_data_service.get_historical_data(
+            asset=request.asset,
+            timeframe=request.timeframe,
+            start_date=start_dt,
+            end_date=end_dt
+        )
+        preview_limit = min(500, len(preview_raw))
+        if preview_limit:
+            preview_candles = [
+                CandleSchema(
+                    timestamp=c.timestamp,
+                    open=c.open,
+                    high=c.high,
+                    low=c.low,
+                    close=c.close,
+                    volume=c.volume,
+                )
+                for c in preview_raw[:preview_limit]
+            ]
+    except Exception as exc:
+        logger.warning("Unable to load preview candles for session %s: %s", session_id, exc)
+        preview_candles = None
 
     return {
         "session": BacktestSessionResponse(
@@ -414,6 +454,7 @@ async def start_backtest(
             playback_speed=request.playback_speed,
             safety_mode=request.safety_mode,
             allow_leverage=request.allow_leverage,
+            preview_candles=preview_candles,
         ),
         "message": "Backtest session created"
     }
@@ -586,8 +627,11 @@ async def start_forward_test(
     engine: ForwardEngine = Depends(get_forward_engine)
 ):
     """Start a new forward test session."""
+    # Eagerly load api_key relationship to avoid lazy loading issues in background task
     agent_result = await db.execute(
-        select(Agent).where(Agent.id == request.agent_id, Agent.user_id == current_user.id)
+        select(Agent)
+        .options(selectinload(Agent.api_key))
+        .where(Agent.id == request.agent_id, Agent.user_id == current_user.id)
     )
     agent = agent_result.scalar_one_or_none()
     if not agent:

@@ -1,5 +1,6 @@
-import { useApiClient } from "@/lib/api";
 import { useCallback } from "react";
+import { useApiClient } from "@/lib/api";
+import type { CandleData } from "@/types";
 
 interface BacktestStartPayload {
   agent_id: string;
@@ -26,16 +27,36 @@ interface ForwardStartPayload {
   allow_leverage: boolean;
 }
 
+interface CandleDto {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+interface BacktestSessionDto {
+  id: string;
+  status: string;
+  agent_id: string;
+  agent_name: string;
+  asset: string;
+  timeframe: string;
+  websocket_url: string;
+  date_preset?: string | null;
+  playback_speed?: string | null;
+  safety_mode: boolean;
+  allow_leverage: boolean;
+  preview_candles?: CandleDto[] | null;
+}
+
+interface BacktestSession extends BacktestSessionDto {
+  previewCandles?: CandleData[];
+}
+
 interface BacktestStartResponse {
-  session: {
-    id: string;
-    status: string;
-    agent_id: string;
-    agent_name: string;
-    asset: string;
-    timeframe: string;
-    websocket_url: string;
-  };
+  session: BacktestSessionDto;
   message: string;
 }
 
@@ -73,13 +94,28 @@ interface BacktestStatusResponse {
   };
 }
 
+const mapPreviewCandles = (preview?: CandleDto[] | null): CandleData[] | undefined => {
+  if (!preview || preview.length === 0) return undefined;
+  return preview.map((candle) => ({
+    time: new Date(candle.timestamp).getTime(),
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volume: candle.volume,
+  }));
+};
+
 export function useArenaApi() {
   const { post, get } = useApiClient();
 
   const startBacktest = useCallback(
-    async (payload: BacktestStartPayload) => {
+    async (payload: BacktestStartPayload): Promise<BacktestSession> => {
       const response = await post<BacktestStartResponse>("/api/arena/backtest/start", payload);
-      return response.session;
+      return {
+        ...response.session,
+        previewCandles: mapPreviewCandles(response.session.preview_candles),
+      };
     },
     [post]
   );

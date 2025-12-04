@@ -3,6 +3,8 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, Field, validator
 
+from schemas.data_schemas import CandleSchema
+
 # --- Backtest Schemas ---
 
 class BacktestStartRequest(BaseModel):
@@ -37,6 +39,7 @@ class BacktestSessionResponse(BaseModel):
     playback_speed: Optional[str] = None
     safety_mode: bool = True
     allow_leverage: bool = False
+    preview_candles: Optional[List[CandleSchema]] = None
 
 class BacktestStartResponse(BaseModel):
     session: BacktestSessionResponse
