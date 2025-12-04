@@ -20,6 +20,7 @@ class BacktestStartRequest(BaseModel):
     allow_leverage: bool = False
     decision_mode: str = "every_candle"
     decision_interval_candles: int = Field(1, ge=1, description="Interval used with every_n_candles")
+    indicator_readiness_threshold: Optional[float] = Field(80.0, ge=50.0, le=100.0, description="Minimum percentage of indicators that must be ready before trading starts (50-100%)")
 
     @validator('date_preset')
     def validate_preset(cls, v):

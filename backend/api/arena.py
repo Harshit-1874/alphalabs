@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Optional, Tuple, Dict, List, Any, Set
 from uuid import UUID
 import uuid
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,10 +27,12 @@ from services.trading.backtest_engine import BacktestEngine
 from services.trading.forward_engine import ForwardEngine
 from services.trading.engine_factory import get_backtest_engine, get_forward_engine
 from services.market_data_service import MarketDataService
+from services.notification_service import NotificationService
 from config import settings
 from api.users import get_current_user
 
 router = APIRouter(prefix="/api/arena", tags=["arena"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/forward/{id}/stop", response_model=ForwardStopResponse)
@@ -400,6 +403,19 @@ async def start_backtest(
     db.add(test_session)
     await db.commit()
 
+    notification_service = NotificationService(db)
+    try:
+        await notification_service.create_notification(
+            user_id=current_user.id,
+            type="test_started",
+            title=f"Backtest started • {request.asset.upper()}",
+            message=f"{agent.name} is testing {request.asset.upper()} on {request.timeframe}",
+            session_id=session_id,
+        )
+    except Exception as exc:
+        # Don't block backtest start on notification errors
+        logger.warning("Failed to create test start notification: %s", exc)
+
     # Start backtest in background
     # We use background_tasks to trigger the engine's start method
     # The engine will handle its own background task for the loop
@@ -416,6 +432,8 @@ async def start_backtest(
         allow_leverage=request.allow_leverage,
         decision_mode=request.decision_mode,
         decision_interval_candles=request.decision_interval_candles,
+        indicator_readiness_threshold=request.indicator_readiness_threshold or 80.0,
+        user_id=str(current_user.id),
     )
 
     preview_candles = None

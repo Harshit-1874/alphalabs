@@ -22,7 +22,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from openai import AsyncOpenAI
 
 from config import settings
@@ -68,6 +68,9 @@ class AIDecision:
     take_profit_price: Optional[float] = None
     size_percentage: float = 0.0
     leverage: int = 1
+    candle_index: Optional[int] = None
+    decision_context: Optional[Dict[str, Any]] = None
+    candle_index: Optional[int] = None
 
 
 class AITrader:
@@ -134,7 +137,10 @@ class AITrader:
         candle: Candle,
         indicators: Dict[str, float],
         position_state: Optional[Position],
-        equity: float
+        equity: float,
+        recent_candles: Optional[List[Dict[str, Any]]] = None,
+        recent_indicators: Optional[List[Dict[str, Any]]] = None,
+        decision_context: Optional[Dict[str, Any]] = None,
     ) -> AIDecision:
         """
         Get trading decision from AI model with retry logic.
@@ -154,7 +160,15 @@ class AITrader:
         """
         try:
             # Build prompt with market context
-            prompt = self._build_prompt(candle, indicators, position_state, equity)
+            prompt = self._build_prompt(
+                candle,
+                indicators,
+                position_state,
+                equity,
+                recent_candles=recent_candles,
+                recent_indicators=recent_indicators,
+                decision_context=decision_context,
+            )
             
             # Make API request with retry, timeout, and circuit breaker protection
             async def make_request_with_retry():
@@ -216,7 +230,10 @@ class AITrader:
         candle: Candle,
         indicators: Dict[str, float],
         position_state: Optional[Position],
-        equity: float
+        equity: float,
+        recent_candles: Optional[List[Dict[str, Any]]] = None,
+        recent_indicators: Optional[List[Dict[str, Any]]] = None,
+        decision_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Build prompt with candle data, indicators, and position state.
@@ -258,8 +275,14 @@ class AITrader:
             "candle": candle_data,
             "indicators": indicators,
             "position": position_data,
-            "equity": equity
+            "equity": equity,
+            "recent_candles": recent_candles or [],
+            "recent_indicators": recent_indicators or [],
+            "decision_context": decision_context or {},
         }
+        constraints = market_context["decision_context"]
+        allow_leverage = constraints.get("allow_leverage", False) if constraints else False
+        max_leverage = constraints.get("max_leverage", 1) if constraints else 1
         
         # Create user message
         user_message = f"""Current Market State:
@@ -283,7 +306,7 @@ Rules:
 - stop_loss_price: Absolute price level (not percentage). For LONG, should be below entry. For SHORT, should be above entry.
 - take_profit_price: Absolute price level (not percentage). For LONG, should be above entry. For SHORT, should be below entry.
 - size_percentage: How much of your capital to use (0.0 to 1.0). For example, 0.5 means use 50% of capital.
-- leverage: Multiplier for position size (1 to 5). Use 1 for no leverage.
+- leverage: Multiplier for position size. Leverage is {'allowed up to ' + str(max_leverage) + 'x' if allow_leverage else 'locked at 1x (no leverage allowed)'}.
 - If you have an open position, you can only CLOSE or HOLD
 - If you don't have a position, you can LONG, SHORT, or HOLD
 """
@@ -479,8 +502,13 @@ Always respond with valid JSON in the exact format specified."""
                 raise OpenRouterAPIError(f"size_percentage must be between 0.0 and 1.0, got {size_percentage}")
             
             # Validate leverage
+            if leverage is None:
+                leverage = 1
             if not isinstance(leverage, int):
-                leverage = int(leverage)
+                try:
+                    leverage = int(leverage)
+                except (TypeError, ValueError):
+                    raise OpenRouterAPIError(f"Invalid leverage value: {leverage!r}")
             if leverage < 1 or leverage > 5:
                 raise OpenRouterAPIError(f"leverage must be between 1 and 5, got {leverage}")
             
@@ -492,6 +520,9 @@ Always respond with valid JSON in the exact format specified."""
             if take_profit_price is not None and not isinstance(take_profit_price, (int, float)):
                 raise OpenRouterAPIError(f"Invalid take_profit_price type: {type(take_profit_price)}")
             
+            candle_index = data.get("candle_index")
+            decision_context = data.get("decision_context")
+            
             # Create AIDecision
             return AIDecision(
                 action=action,
@@ -501,6 +532,8 @@ Always respond with valid JSON in the exact format specified."""
                 take_profit_price=float(take_profit_price) if take_profit_price is not None else None,
                 size_percentage=float(size_percentage),
                 leverage=leverage,
+                candle_index=int(candle_index) if candle_index is not None else None,
+                decision_context=decision_context,
             )
             
         except json.JSONDecodeError as e:

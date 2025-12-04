@@ -35,7 +35,7 @@ import { useArenaApi } from "@/hooks/use-arena-api";
 import { useBacktestWebSocket, type WebSocketEvent } from "@/hooks/use-backtest-websocket";
 import { useResultsApi } from "@/hooks/use-results-api";
 import { NARRATOR_MESSAGES } from "@/lib/dummy-island-data";
-import type { CandleData, AIThought, Trade, PlaybackSpeed } from "@/types";
+import type { CandleData, AIThought, Trade, PlaybackSpeed, TradeMarker } from "@/types";
 
 interface BattleScreenProps {
   sessionId: string;
@@ -52,6 +52,8 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     addTrade,
     addThought,
     updateSessionStats,
+    setActiveSessionId,
+    clearActiveSessionId,
   } = useArenaStore();
   const { agents } = useAgentsStore();
   const { getBacktestStatus } = useArenaApi();
@@ -131,6 +133,10 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     : 0);
 
   // WebSocket event handler
+  useEffect(() => {
+    setActiveSessionId(sessionId);
+  }, [sessionId, setActiveSessionId]);
+
   const handleWebSocketEvent = useCallback((event: WebSocketEvent) => {
     switch (event.type) {
       case "candle":
@@ -170,13 +176,20 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
       case "ai_decision":
         // AI made a decision - add as thought - store in Zustand
         if (event.data) {
+          const candleIndexFromEvent =
+            typeof event.data.candle_index === "number" ? event.data.candle_index : currentCandle;
           const thought: AIThought = {
             id: `thought-${Date.now()}`,
             timestamp: new Date(),
-            candle: currentCandle,
+            candle: candleIndexFromEvent,
             type: event.data.action ? "execution" : "decision",
             content: event.data.reasoning || "AI made a decision",
             action: event.data.action?.toLowerCase() as "long" | "short" | "hold" | "close" | undefined,
+            decisionMode: event.data.decision_context?.mode,
+            decisionInterval:
+              typeof event.data.decision_context?.interval === "number"
+                ? event.data.decision_context.interval
+                : undefined,
           };
           addThought(sessionId, thought);
           
@@ -243,6 +256,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         // Session finished - fetch final result
         if (event.data?.result_id) {
           setResultId(event.data.result_id);
+          clearActiveSessionId();
           // Navigate to results page
           setTimeout(() => {
             router.push(`/dashboard/results/${event.data.result_id}`);
@@ -250,7 +264,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         }
         break;
     }
-  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router]);
+  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId]);
 
   // Connect to WebSocket
   const { isConnected, sessionState, error: wsError } = useBacktestWebSocket(
@@ -328,11 +342,64 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   }, [sessionState, sessionId, updateSessionStats]);
 
   // Update visible candles based on current progress
+  // Sync with backend's currentCandle to ensure chart stays in sync with processing
+  const playbackSpeed = backtestConfig?.speed ?? "normal";
+  
+  // For instant mode, show all candles immediately
+  // For other modes, sync displayCandleCount with backend's currentCandle
+  // currentCandle is 0-indexed, so if currentCandle=50, we've processed 51 candles (0-50)
+  const displayCandleCount = useMemo(() => {
+    if (candles.length === 0) {
+      return 0;
+    }
+    if (playbackSpeed === "instant") {
+      return candles.length;
+    }
+    // Sync with backend's currentCandle (0-indexed, so add 1 for display count)
+    // This ensures chart stays in sync with backend processing
+    // Cap at candles.length to avoid showing candles that haven't been received yet
+    if (currentCandle >= 0) {
+      return Math.min(currentCandle + 1, candles.length);
+    }
+    return 1;
+  }, [candles.length, currentCandle, playbackSpeed]);
+
   const visibleCandles = useMemo(() => {
     if (candles.length === 0) return [];
-    // Show all candles up to current position
-    return candles.slice(0, currentCandle + 1);
-  }, [candles, currentCandle]);
+    const count = playbackSpeed === "instant" ? candles.length : Math.max(displayCandleCount, 1);
+    return candles.slice(0, Math.min(count, candles.length));
+  }, [candles, displayCandleCount, playbackSpeed]);
+
+  const decisionMarkers: TradeMarker[] = useMemo(() => {
+    if (!candles.length || thoughts.length === 0) return [];
+    const latestVisibleTime =
+      playbackSpeed === "instant"
+        ? Infinity
+        : visibleCandles[visibleCandles.length - 1]?.time ?? 0;
+
+    const markers: TradeMarker[] = [];
+
+    thoughts.forEach((thought) => {
+      if (!thought.action || (thought.action !== "long" && thought.action !== "short")) {
+        return;
+      }
+      const candleAtDecision = candles[thought.candle];
+      if (!candleAtDecision) return;
+      if (candleAtDecision.time > latestVisibleTime) {
+        return;
+      }
+      const isShort = thought.action === "short";
+      markers.push({
+        time: candleAtDecision.time,
+        position: isShort ? "above" : "below",
+        type: isShort ? "entry-short" : "entry-long",
+        price: isShort ? candleAtDecision.high : candleAtDecision.low,
+        label: thought.action.slice(0, 1).toUpperCase(),
+      });
+    });
+
+    return markers;
+  }, [thoughts, candles, visibleCandles, playbackSpeed]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -709,6 +776,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
             <CardContent className="p-1.5 sm:p-2">
               <CandlestickChart
                 data={visibleCandles}
+                markers={decisionMarkers}
                 height={300}
                 showVolume
               />

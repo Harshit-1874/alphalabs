@@ -12,6 +12,7 @@ import {
   type ISeriesApi,
   type CandlestickData,
   type Time,
+  type SeriesMarker,
 } from "lightweight-charts";
 import type { CandleData, TradeMarker } from "@/types";
 
@@ -183,7 +184,9 @@ function CandlestickChartComponent({
 
     const colors = getChartColors(isDark);
 
-    const candleData: CandlestickData<Time>[] = data.map((d) => ({
+    const sortedData = [...data].sort((a, b) => a.time - b.time);
+
+    const candleData: CandlestickData<Time>[] = sortedData.map((d) => ({
       time: (d.time / 1000) as Time, // Convert ms to seconds
       open: d.open,
       high: d.high,
@@ -195,7 +198,7 @@ function CandlestickChartComponent({
 
     // Volume data with theme-aware colors
     if (volumeSeriesRef.current && showVolume) {
-      const volumeData = data.map((d) => ({
+      const volumeData = sortedData.map((d) => ({
         time: (d.time / 1000) as Time,
         value: d.volume,
         color:
@@ -210,8 +213,38 @@ function CandlestickChartComponent({
     chartRef.current?.timeScale().fitContent();
   }, [data, showVolume, isDark]);
 
-  // Note: Markers API changed in v5 - would need SeriesMarkers plugin
-  // For now, markers are not rendered but the prop is kept for future implementation
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+    if (!markers || markers.length === 0) {
+      (candleSeriesRef.current as unknown as { setMarkers?: (markers: SeriesMarker<Time>[]) => void }).setMarkers?.([]);
+      return;
+    }
+
+    const markerStyles: Record<string, { color: string; shape: "arrowUp" | "arrowDown" | "circle"; text: string }> = {
+      "entry-long": { color: "#22c55e", shape: "arrowUp", text: "L" },
+      "entry-short": { color: "#ef4444", shape: "arrowDown", text: "S" },
+      "exit-profit": { color: "#10b981", shape: "circle", text: "TP" },
+      "exit-loss": { color: "#f87171", shape: "circle", text: "SL" },
+    };
+
+    const chartMarkers: SeriesMarker<Time>[] = [...markers]
+      .sort((a, b) => a.time - b.time)
+      .map((marker) => {
+      const style = markerStyles[marker.type] ?? markerStyles["entry-long"];
+      return {
+        time: (marker.time / 1000) as Time,
+        position: marker.position === "above" ? "aboveBar" : "belowBar",
+        color: style.color,
+        shape: style.shape,
+        text: marker.label ?? style.text,
+        size: 1,
+        ...(marker.price ? { price: marker.price } : {}),
+      };
+      });
+
+    const series = candleSeriesRef.current as unknown as { setMarkers?: (markers: SeriesMarker<Time>[]) => void };
+    series.setMarkers?.(chartMarkers);
+  }, [markers]);
 
   return (
     <div

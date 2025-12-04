@@ -13,6 +13,9 @@ interface BacktestStartPayload {
   playback_speed: string;
   safety_mode: boolean;
   allow_leverage: boolean;
+  decision_mode: "every_candle" | "every_n_candles";
+  decision_interval_candles: number;
+  indicator_readiness_threshold?: number;
 }
 
 interface ForwardStartPayload {
@@ -49,6 +52,8 @@ interface BacktestSessionDto {
   safety_mode: boolean;
   allow_leverage: boolean;
   preview_candles?: CandleDto[] | null;
+  decision_mode?: string | null;
+  decision_interval_candles?: number | null;
 }
 
 interface BacktestSession extends BacktestSessionDto {

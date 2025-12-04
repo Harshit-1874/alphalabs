@@ -29,7 +29,7 @@ Usage:
 
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, Dict, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,22 @@ from services.trading.backtest_engine.position_handler import PositionHandler
 from services.trading.backtest_engine.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
+
+
+HISTORY_WINDOW = 20
+MIN_HISTORY_WINDOW = 10  # Reduced history when no position and market is stable
+
+# Constants for LLM triggering logic
+INITIAL_READINESS_THRESHOLD = 0.8  # 80% for initial decision_start_index calculation
+RUNTIME_READINESS_THRESHOLD = 0.7  # 70% for runtime indicator readiness checks
+
+# Position-aware forcing thresholds
+FORCE_DECISION_SL_TP_PROXIMITY_PCT = 1.0  # Force if within 1% of stop-loss or take-profit
+FORCE_DECISION_SIGNIFICANT_PNL_PCT = 2.0  # Force if unrealized PnL > 2% of position size
+FORCE_DECISION_EXTENDED_PERIOD = 50  # Force if position open for 50+ candles without review
+
+# Volatility-based skipping thresholds
+LOW_VOLATILITY_THRESHOLD = 0.5  # Skip if current volatility < 50% of recent average
 
 
 class CandleProcessor:
@@ -171,31 +187,99 @@ class CandleProcessor:
         position_state = session_state.position_manager.get_position()
         equity = session_state.position_manager.get_total_equity()
 
-        # Determine whether this candle should trigger an AI decision
-        should_run_ai = (
-            candle_index >= session_state.decision_start_index
-            and self._is_decision_candle(session_state, candle_index)
+        # Check if indicators are actually ready at runtime (safety check)
+        # This ensures we don't call the LLM with mostly None indicators
+        indicators_ready = session_state.indicator_calculator.check_indicator_readiness(
+            candle_index, 
+            min_ready_percentage=RUNTIME_READINESS_THRESHOLD
         )
+
+        # Priority-based LLM triggering logic
+        # Priority 1: Force conditions (position needs attention)
+        force_decision, force_reason = self._should_force_llm_call(
+            session_state, candle_index, position_state, candle
+        )
+        
+        # Initialize skip_reason for use in else block
+        skip_reason: Optional[str] = None
+        
+        # Priority 2: Normal cadence check (if not forced)
+        if not force_decision:
+            # Check volatility-based skipping (only if no position)
+            if not position_state:
+                skip_volatility, volatility_reason = self._should_skip_due_to_low_volatility(
+                    session_state, candle_index, indicators
+                )
+                if skip_volatility:
+                    should_run_ai = False
+                    skip_reason = f"SKIPPED (volatility): {volatility_reason}"
+                else:
+                    # Normal cadence check
+                    should_run_ai = (
+                        candle_index >= session_state.decision_start_index
+                        and indicators_ready
+                        and self._is_decision_candle(session_state, candle_index)
+                    )
+            else:
+                # Normal cadence check when position exists
+                should_run_ai = (
+                    candle_index >= session_state.decision_start_index
+                    and indicators_ready
+                    and self._is_decision_candle(session_state, candle_index)
+                )
+                skip_reason = None
+        else:
+            # Force decision - override normal cadence
+            should_run_ai = True
+            skip_reason = None
 
         if should_run_ai:
             # Broadcast AI thinking event
             await self.broadcaster.broadcast_ai_thinking(session_id)
+
+            # Use adaptive history window based on position state
+            force_full_history = force_decision  # Always use full history when forced
+            recent_candles, recent_indicators = self._build_decision_history(
+                session_state, candle_index, force_full_history=force_full_history
+            )
+            
+            decision_context = {
+                "mode": session_state.decision_mode,
+                "interval": session_state.decision_interval_candles,
+                "candle_index": candle_index,
+                "allow_leverage": session_state.allow_leverage,
+                "max_leverage": 5 if session_state.allow_leverage else 1,
+                "forced_decision": force_decision,
+                "force_reason": force_reason if force_decision else None,
+            }
 
             decision = await session_state.ai_trader.get_decision(
                 candle=candle,
                 indicators=indicators,
                 position_state=position_state,
                 equity=equity,
+                recent_candles=recent_candles,
+                recent_indicators=recent_indicators,
+                decision_context=decision_context,
             )
+            decision.candle_index = candle_index
         else:
+            # Build skip reasoning
             if candle_index < session_state.decision_start_index:
                 reasoning = (
                     f"Skipping AI decision for candle {candle_index} because "
                     f"indicators are still warming up (decision_start_index="
                     f"{session_state.decision_start_index})."
                 )
-            else:
+            elif not indicators_ready:
+                ready_count = sum(1 for v in indicators.values() if v is not None)
+                total_count = len(indicators)
                 reasoning = (
+                    f"Skipping AI decision for candle {candle_index} because "
+                    f"insufficient indicators are ready ({ready_count}/{total_count} ready)."
+                )
+            else:
+                reasoning = skip_reason or (
                     f"Decision cadence ({session_state.decision_mode}) skipped candle {candle_index}"
                 )
             decision = AIDecision(
@@ -333,6 +417,8 @@ class CandleProcessor:
                     "take_profit_price": decision.take_profit_price,
                     "leverage": leverage,
                     "reasoning": decision.reasoning,
+                    "decision_candle": decision.candle_index,
+                    "decision_context": getattr(decision, "decision_context", None),
                 }
                 self.logger.info(
                     f"Registered pending {action} order at {decision.entry_price} "
@@ -387,14 +473,192 @@ class CandleProcessor:
         }
 
     def _is_decision_candle(self, session_state: Any, candle_index: int) -> bool:
+        """
+        Determine if this candle should trigger an AI decision based on cadence settings.
+        
+        For 'every_candle': Always returns True (after warm-up period).
+        For 'every_n_candles': Returns True every N candles, counting from decision_start_index.
+        
+        Args:
+            session_state: Session state object
+            candle_index: Current candle index
+            
+        Returns:
+            True if this candle should trigger a decision, False otherwise
+        """
         mode = getattr(session_state, "decision_mode", "every_candle")
         if mode == "every_candle":
             return True
         if mode == "every_n_candles":
             interval = getattr(session_state, "decision_interval_candles", 1) or 1
+            # Count from decision_start_index to avoid triggering during warm-up
             elapsed = max(0, candle_index - session_state.decision_start_index)
             return elapsed % interval == 0
         return True
+
+    def _build_decision_history(
+        self, 
+        session_state: Any, 
+        candle_index: int, 
+        force_full_history: bool = False
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """
+        Build recent candle and indicator history for AI decision context.
+        
+        Uses adaptive window size:
+        - Full window (HISTORY_WINDOW) when position exists or forced
+        - Reduced window (MIN_HISTORY_WINDOW) when no position and not forced
+        
+        Args:
+            session_state: Session state object
+            candle_index: Current candle index
+            force_full_history: If True, always use full history window
+            
+        Returns:
+            Tuple of (recent_candles, recent_indicators) lists
+        """
+        # Adaptive window: use smaller window when no position and not forced
+        has_position = session_state.position_manager.has_open_position()
+        window_size = HISTORY_WINDOW if (force_full_history or has_position) else MIN_HISTORY_WINDOW
+        
+        window_start = max(0, candle_index - window_size + 1)
+        selected_candles = session_state.candles[window_start:candle_index + 1]
+        
+        recent_candles = [
+            {
+                "timestamp": c.timestamp.isoformat(),
+                "open": c.open,
+                "high": c.high,
+                "low": c.low,
+                "close": c.close,
+                "volume": c.volume,
+            }
+            for c in selected_candles
+        ]
+
+        recent_indicators = []
+        for idx in range(window_start, candle_index + 1):
+            values = session_state.indicator_calculator.calculate_all(idx)
+            recent_indicators.append(
+                {
+                    "candle_index": idx,
+                    "values": values,
+                }
+            )
+
+        return recent_candles, recent_indicators
+
+    def _should_force_llm_call(
+        self, 
+        session_state: Any, 
+        candle_index: int, 
+        position: Optional[Position], 
+        candle: Candle
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Determine if LLM call should be forced due to position conditions.
+        
+        Forces decision when:
+        1. Position is near stop-loss or take-profit (within threshold)
+        2. Position has significant unrealized PnL (> threshold % of position size)
+        3. Position has been open for extended period without review
+        
+        Args:
+            session_state: Session state object
+            candle_index: Current candle index
+            position: Current open position (None if no position)
+            candle: Current candle data
+            
+        Returns:
+            Tuple of (should_force, reason_string)
+        """
+        if not position:
+            return False, None
+        
+        current_price = candle.close
+        
+        # Check 1: Position near stop-loss or take-profit
+        if position.stop_loss:
+            distance_to_sl_pct = abs(position.stop_loss - current_price) / current_price * 100
+            if distance_to_sl_pct < FORCE_DECISION_SL_TP_PROXIMITY_PCT:
+                return True, f"Position near stop-loss (within {FORCE_DECISION_SL_TP_PROXIMITY_PCT}%)"
+        
+        if position.take_profit:
+            distance_to_tp_pct = abs(position.take_profit - current_price) / current_price * 100
+            if distance_to_tp_pct < FORCE_DECISION_SL_TP_PROXIMITY_PCT:
+                return True, f"Position near take-profit (within {FORCE_DECISION_SL_TP_PROXIMITY_PCT}%)"
+        
+        # Check 2: Significant unrealized PnL
+        if position.size > 0:
+            pnl_pct_of_position = abs(position.unrealized_pnl) / position.size * 100
+            if pnl_pct_of_position > FORCE_DECISION_SIGNIFICANT_PNL_PCT:
+                return True, f"Significant unrealized PnL ({pnl_pct_of_position:.2f}% of position size)"
+        
+        # Check 3: Position open for extended period
+        # Find when position was opened by checking recent AI thoughts
+        entry_candle_index = None
+        for thought in reversed(session_state.ai_thoughts[-20:]):  # Check last 20 thoughts
+            if thought.get("decision") in ["LONG", "SHORT"]:
+                entry_candle_index = thought.get("candle_number")
+                break
+        
+        if entry_candle_index is not None:
+            candles_since_entry = candle_index - entry_candle_index
+            if candles_since_entry > FORCE_DECISION_EXTENDED_PERIOD:
+                return True, f"Position open for {candles_since_entry} candles without review"
+        
+        return False, None
+
+    def _should_skip_due_to_low_volatility(
+        self, 
+        session_state: Any, 
+        candle_index: int, 
+        indicators: Dict[str, Optional[float]]
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Determine if LLM call should be skipped due to low volatility.
+        
+        Skips when current volatility is significantly below recent average.
+        Uses ATR if available, otherwise uses price range.
+        
+        Args:
+            session_state: Session state object
+            candle_index: Current candle index
+            indicators: Current indicator values
+            
+        Returns:
+            Tuple of (should_skip, reason_string)
+        """
+        # Need at least a few candles to compare volatility
+        if candle_index < 5:
+            return False, None
+        
+        # Method 1: Use ATR if available
+        if 'atr' in indicators and indicators['atr'] is not None:
+            current_atr = indicators['atr']
+            # Get average ATR from recent candles
+            recent_atrs = []
+            for idx in range(max(0, candle_index - 5), candle_index):
+                recent_indicators = session_state.indicator_calculator.calculate_all(idx)
+                if 'atr' in recent_indicators and recent_indicators['atr'] is not None:
+                    recent_atrs.append(recent_indicators['atr'])
+            
+            if len(recent_atrs) >= 3:
+                avg_atr = sum(recent_atrs) / len(recent_atrs)
+                if avg_atr > 0 and current_atr < avg_atr * LOW_VOLATILITY_THRESHOLD:
+                    return True, f"Low volatility (ATR {current_atr:.2f} < {LOW_VOLATILITY_THRESHOLD*100}% of avg {avg_atr:.2f})"
+        
+        # Method 2: Use price range as fallback
+        if candle_index >= 5:
+            recent_candles = session_state.candles[max(0, candle_index - 5):candle_index + 1]
+            price_ranges = [c.high - c.low for c in recent_candles]
+            avg_range = sum(price_ranges[:-1]) / len(price_ranges[:-1]) if len(price_ranges) > 1 else price_ranges[0]
+            current_range = price_ranges[-1]
+            
+            if avg_range > 0 and current_range < avg_range * LOW_VOLATILITY_THRESHOLD:
+                return True, f"Low volatility (price range {current_range:.2f} < {LOW_VOLATILITY_THRESHOLD*100}% of avg {avg_range:.2f})"
+        
+        return False, None
 
     def _compute_elapsed_seconds(self, session_state: Any) -> int:
         if not session_state.started_at:

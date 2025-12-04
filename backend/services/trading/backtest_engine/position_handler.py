@@ -29,6 +29,7 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
@@ -37,6 +38,7 @@ from models.arena import Trade
 from services.trading.position_manager import Position as PositionData
 from websocket.manager import WebSocketManager
 from websocket.events import Event, EventType
+from services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +130,21 @@ class PositionHandler:
             f"Position opened event broadcasted: session_id={session_id}, "
             f"trade_number={trade_number}"
         )
+        
+        try:
+            notification_service = NotificationService(db)
+            await notification_service.create_notification(
+                user_id=UUID(session_state.user_id),
+                type="trade_executed",
+                title=f"Trade executed • {session_state.asset.upper()}",
+                message=(
+                    f"{session_state.agent.name} opened {position.action.upper()} "
+                    f"at ${position.entry_price:.2f}"
+                ),
+                session_id=UUID(session_id),
+            )
+        except Exception as exc:
+            self.logger.warning("Failed to send trade notification: %s", exc)
     
     async def handle_position_closed(
         self,

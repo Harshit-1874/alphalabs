@@ -34,6 +34,8 @@ export interface BacktestConfig {
   speed: PlaybackSpeed;
   safetyMode: boolean;
   allowLeverage: boolean;
+  decisionMode: "every_candle" | "every_n_candles";
+  decisionIntervalCandles: number;
 }
 
 export interface ForwardTestConfig {
@@ -94,6 +96,8 @@ export interface AIThought {
   type: "analysis" | "decision" | "execution";
   content: string;
   action?: "long" | "short" | "hold" | "close";
+  decisionMode?: "every_candle" | "every_n_candles";
+  decisionInterval?: number;
 }
 
 export interface LiveSession {

@@ -5,6 +5,21 @@
 import { create } from "zustand";
 import type { BattleState, LiveSession, BacktestConfig, ForwardTestConfig, PlaybackSpeed, CandleData, AIThought, Trade } from "@/types";
 
+type SessionSnapshot = {
+  candles: CandleData[];
+  trades: Trade[];
+  thoughts: AIThought[];
+  equity: number;
+  pnl: number;
+  status: string;
+  currentCandle: number;
+  totalCandles: number;
+  startedAt?: Date;
+  asset?: string;
+  agentId?: string;
+  winRate?: number;
+};
+
 interface ArenaState {
   // Active sessions
   liveSessions: LiveSession[];
@@ -12,18 +27,10 @@ interface ArenaState {
   // Current battle (backtest) - session-specific data
   battleState: BattleState | null;
   backtestConfig: BacktestConfig | null;
+  activeSessionId: string | null;
   
   // Session data (candles, trades, thoughts) - keyed by sessionId
-  sessionData: Record<string, {
-    candles: CandleData[];
-    trades: Trade[];
-    thoughts: AIThought[];
-    equity: number;
-    pnl: number;
-    status: string;
-    currentCandle: number;
-    totalCandles: number;
-  }>;
+  sessionData: Record<string, SessionSnapshot>;
   
   // Forward test config
   forwardConfig: ForwardTestConfig | null;
@@ -35,6 +42,8 @@ interface ArenaState {
   // Actions
   setBacktestConfig: (config: BacktestConfig) => void;
   setForwardConfig: (config: ForwardTestConfig) => void;
+  setActiveSessionId: (sessionId: string) => void;
+  clearActiveSessionId: () => void;
   startBattle: (sessionId: string) => void;
   pauseBattle: () => void;
   resumeBattle: () => void;
@@ -65,6 +74,14 @@ interface ArenaState {
   addLiveSession: (session: LiveSession) => void;
   removeLiveSession: (id: string) => void;
   updateLiveSession: (id: string, updates: Partial<LiveSession>) => void;
+  upsertLiveBacktest: (session: {
+    id: string;
+    asset: string;
+    status: string;
+    startedAt: Date;
+    pnl: number;
+    progress: number;
+  }) => void;
 }
 
 export const useArenaStore = create<ArenaState>((set, get) => ({
@@ -74,6 +91,7 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
   // Battle state
   battleState: null,
   backtestConfig: null,
+  activeSessionId: null,
   forwardConfig: null,
   
   // Session data - keyed by sessionId
@@ -86,6 +104,8 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
   // Config setters
   setBacktestConfig: (config) => set({ backtestConfig: config }),
   setForwardConfig: (config) => set({ forwardConfig: config }),
+  setActiveSessionId: (sessionId) => set({ activeSessionId: sessionId }),
+  clearActiveSessionId: () => set({ activeSessionId: null }),
   
   // Battle controls
   startBattle: (sessionId) =>
@@ -154,12 +174,21 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         currentCandle: 0,
         totalCandles: 0,
       };
+      let nextCandles = [...session.candles, candle];
+
+      // Deduplicate by candle time, keeping the latest entry for a given timestamp
+      const map = new Map<number, typeof candle>();
+      nextCandles.forEach((item) => {
+        map.set(item.time, item);
+      });
+      nextCandles = Array.from(map.values()).sort((a, b) => a.time - b.time);
+
       return {
         sessionData: {
           ...state.sessionData,
           [sessionId]: {
             ...session,
-            candles: [...session.candles, candle],
+            candles: nextCandles,
           },
         },
       };
@@ -294,5 +323,44 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         s.id === id ? { ...s, ...updates } : s
       ),
     })),
+  upsertLiveBacktest: (session) =>
+    set((state) => {
+      const existing = state.liveSessions.find((s) => s.id === session.id);
+      if (existing) {
+        return {
+          liveSessions: state.liveSessions.map((s) =>
+            s.id === session.id
+              ? {
+                  ...s,
+                  asset: session.asset,
+                  pnl: session.pnl,
+                  progress: session.progress,
+                  status: session.status as "running" | "paused",
+                }
+              : s
+          ),
+        };
+      }
+      return {
+        liveSessions: [
+          ...state.liveSessions,
+          {
+            id: session.id,
+            agentId: state.backtestConfig?.agentId || "",
+            agentName:
+              state.backtestConfig?.agentId ||
+              state.battleState?.sessionId ||
+              "Agent",
+            asset: session.asset,
+            startedAt: session.startedAt,
+            duration: "–",
+            pnl: session.pnl,
+            trades: 0,
+            winRate: 0,
+            status: session.status as "running" | "paused",
+          },
+        ],
+      };
+    }),
 }));
 

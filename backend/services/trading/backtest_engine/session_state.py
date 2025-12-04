@@ -66,6 +66,9 @@ class SessionState:
     playback_speed: str = "normal"
     decision_mode: str = "every_candle"
     decision_interval_candles: int = 1
+    user_id: str = ""
+    asset: str = ""
+    timeframe: str = ""
     # Playback speed: 'slow' (1000ms), 'normal' (500ms), 'fast' (200ms), 'instant' (0ms)
     playback_speed: str = "normal"
     

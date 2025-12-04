@@ -6,10 +6,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useForwardSessions } from "@/hooks/use-forward-sessions";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useArenaStore } from "@/lib/stores";
 
-function LiveSessionCard({ session }: { session: ReturnType<typeof useForwardSessions>["sessions"][number] }) {
+interface HappeningSession {
+  id: string;
+  agentName: string;
+  asset: string;
+  pnl: number;
+  progress: number;
+  status: string;
+}
+
+function LiveSessionCard({ session }: { session: HappeningSession }) {
   return (
     <div className="rounded-lg border border-border/50 bg-card/50 p-4">
       {/* Header */}
@@ -26,35 +34,37 @@ function LiveSessionCard({ session }: { session: ReturnType<typeof useForwardSes
       {/* Stats Grid */}
       <div className="mb-4 grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs text-muted-foreground">Duration</p>
-          <p className="font-mono text-sm font-medium">{session.durationDisplay}</p>
+          <p className="text-xs text-muted-foreground">Asset</p>
+          <p className="font-mono text-sm font-medium">
+            {session.asset.toUpperCase().replace("-", "/")}
+          </p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">PnL</p>
           <p
             className={cn(
               "font-mono text-sm font-medium",
-              session.currentPnlPct >= 0 ? "text-[hsl(var(--accent-green))]" : "text-[hsl(var(--accent-red))]"
+              session.pnl >= 0 ? "text-[hsl(var(--accent-green))]" : "text-[hsl(var(--accent-red))]"
             )}
           >
-            {session.currentPnlPct >= 0 ? "+" : ""}
-            {session.currentPnlPct.toFixed(2)}%
+            {session.pnl >= 0 ? "+" : ""}
+            {session.pnl.toFixed(2)}%
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Trades</p>
-          <p className="font-mono text-sm font-medium">{session.tradesCount}</p>
+          <p className="text-xs text-muted-foreground">Progress</p>
+          <p className="font-mono text-sm font-medium">{session.progress.toFixed(0)}%</p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Win Rate</p>
-          <p className="font-mono text-sm font-medium">{session.winRate.toFixed(1)}%</p>
+          <p className="text-xs text-muted-foreground">Status</p>
+          <p className="font-mono text-sm font-medium capitalize">{session.status}</p>
         </div>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-2">
         <Button asChild size="sm" className="flex-1 gap-1">
-          <Link href={`/dashboard/arena/forward/${session.id}`}>
+          <Link href={`/dashboard/arena/backtest/${session.id}`}>
             View
             <ArrowRight className="h-3 w-3" />
           </Link>
@@ -102,7 +112,7 @@ function EmptyState() {
 }
 
 export function LiveSessionsPanel() {
-  const { sessions, isLoading, error } = useForwardSessions();
+  const liveSessions = useArenaStore((state) => state.liveSessions);
 
   return (
     <Card className="border-border/50 bg-card/30">
@@ -110,20 +120,22 @@ export function LiveSessionsPanel() {
         <CardTitle className="font-mono text-lg font-semibold">Live Sessions</CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2].map((key) => (
-              <Skeleton key={key} className="h-36 w-full rounded-lg" />
-            ))}
-          </div>
-        ) : error ? (
-          <div className="text-sm text-destructive">{error}</div>
-        ) : sessions.length === 0 ? (
+        {liveSessions.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="space-y-4">
-            {sessions.map((session) => (
-              <LiveSessionCard key={session.id} session={session} />
+            {liveSessions.map((session) => (
+              <LiveSessionCard
+                key={session.id}
+                session={{
+                  id: session.id,
+                  agentName: session.agentName || session.agentId || "Agent",
+                  asset: session.asset,
+                  pnl: session.pnl,
+                  progress: (session as any).progress ?? 0,
+                  status: session.status,
+                }}
+              />
             ))}
           </div>
         )}

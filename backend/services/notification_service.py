@@ -63,6 +63,7 @@ class NotificationService:
         """
         # Validate notification type
         valid_types = [
+            'test_started',
             'test_completed',
             'trade_executed',
             'stop_loss_hit',

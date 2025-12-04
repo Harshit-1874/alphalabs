@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { History, Zap, Bot, Clock, DollarSign, Shield, TrendingUp } from "lucide-react";
+import { History, Zap, Bot, Clock, DollarSign, Shield, TrendingUp, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,11 @@ export function BacktestConfig() {
     speed: "normal" as "slow" | "normal" | "fast" | "instant",
     safetyMode: true,
     allowLeverage: false,
+    decisionMode: "every_candle" as "every_candle" | "every_n_candles",
+    decisionInterval: "1",
+    indicatorReadinessThreshold: "80", // Percentage of indicators that must be ready
   });
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -100,6 +104,9 @@ export function BacktestConfig() {
         playback_speed: config.speed,
         safety_mode: config.safetyMode,
         allow_leverage: config.allowLeverage,
+        decision_mode: config.decisionMode,
+        decision_interval_candles: Number(config.decisionInterval || "1"),
+        indicator_readiness_threshold: Number(config.indicatorReadinessThreshold || "80"),
       });
 
       setBacktestConfig({
@@ -111,6 +118,8 @@ export function BacktestConfig() {
         endDate: config.endDate || undefined,
         capital: Number(config.capital),
         speed: config.speed,
+        decisionMode: config.decisionMode,
+        decisionIntervalCandles: Number(config.decisionInterval || "1"),
         safetyMode: config.safetyMode,
         allowLeverage: config.allowLeverage,
       });
@@ -370,7 +379,7 @@ export function BacktestConfig() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
+                {/* <div className="space-y-1.5">
                   <Label className="text-xs">Playback Speed</Label>
                   <AnimatedSelect
                     value={config.speed}
@@ -389,8 +398,104 @@ export function BacktestConfig() {
                       ))}
                     </AnimatedSelectContent>
                   </AnimatedSelect>
-                </div>
+                </div> */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Decision cadence</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={config.decisionMode === "every_candle" ? "secondary" : "outline"}
+                  size="sm"
+                  className="text-[10px] px-3"
+                  onClick={() => setConfig({ ...config, decisionMode: "every_candle" })}
+                >
+                  Every candle
+                </Button>
+                <Button
+                  variant={config.decisionMode === "every_n_candles" ? "secondary" : "outline"}
+                  size="sm"
+                  className="text-[10px] px-3"
+                  onClick={() => setConfig({ ...config, decisionMode: "every_n_candles" })}
+                >
+                  Every N candles
+                </Button>
               </div>
+              {config.decisionMode === "every_n_candles" && (
+                <div className="flex flex-col gap-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={config.decisionInterval}
+                    onChange={(e) => setConfig({ ...config, decisionInterval: e.target.value })}
+                    className="h-8 text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Enter how many candles between AI interventions (e.g., 4 means every 4th candle).
+                  </p>
+                </div>
+              )}
+            </div>
+              </div>
+
+              {/* Indicator Readiness Info */}
+              {selectedAgent && selectedAgent.indicators && selectedAgent.indicators.length > 0 && (
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-2.5">
+                  <div className="flex items-start gap-2">
+                    <Info className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <p className="text-[10px] font-medium text-blue-500">
+                        Indicator Warm-up Period
+                      </p>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        Trading decisions start when {config.indicatorReadinessThreshold}% of your {selectedAgent.indicators.length} selected indicators are ready. 
+                        Long-period indicators (e.g., EMA/SMA 200) may need 200+ candles to warm up.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Advanced Settings Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex w-full items-center justify-between rounded-lg border border-border/50 bg-muted/10 px-2 py-1.5 text-[10px] hover:bg-muted/20 transition-colors"
+              >
+                <span className="text-muted-foreground">Advanced Settings</span>
+                {showAdvanced ? (
+                  <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+
+              {/* Advanced Settings Content */}
+              {showAdvanced && (
+                <div className="space-y-2 rounded-lg border border-border/50 bg-muted/10 p-2.5">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1.5">
+                      <Info className="h-3 w-3 text-muted-foreground" />
+                      Indicator Readiness Threshold (%)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={100}
+                      value={config.indicatorReadinessThreshold}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "" || (parseInt(val) >= 50 && parseInt(val) <= 100)) {
+                          setConfig({ ...config, indicatorReadinessThreshold: val });
+                        }
+                      }}
+                      className="h-8 text-sm"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Minimum percentage of indicators that must be ready before trading starts (50-100%). 
+                      Lower = start earlier but with fewer indicators. Default: 80%
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <div className="flex items-center space-x-2">

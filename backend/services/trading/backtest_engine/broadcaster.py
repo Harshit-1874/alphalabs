@@ -160,7 +160,10 @@ class EventBroadcaster:
                 "stop_loss_price": decision.stop_loss_price,
                 "take_profit_price": decision.take_profit_price,
                 "size_percentage": decision.size_percentage,
-                "leverage": decision.leverage
+                "leverage": decision.leverage,
+                "entry_price": decision.entry_price,
+                "candle_index": decision.candle_index,
+                "decision_context": decision.decision_context,
             }
         )
         await self.websocket_manager.broadcast_to_session(session_id, event)

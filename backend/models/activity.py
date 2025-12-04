@@ -56,7 +56,7 @@ class Notification(Base, UUIDMixin, TimestampMixin):
         Index('idx_notifications_read', 'user_id', 'is_read'),
         Index('idx_notifications_date', 'user_id', 'created_at', postgresql_using='btree', postgresql_ops={'created_at': 'DESC'}),
         CheckConstraint(
-            "type IN ('test_completed', 'trade_executed', 'stop_loss_hit', 'system_alert', 'daily_summary')",
+            "type IN ('test_started', 'test_completed', 'trade_executed', 'stop_loss_hit', 'system_alert', 'daily_summary')",
             name="check_notification_type_values"
         ),
     )

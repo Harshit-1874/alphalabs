@@ -106,6 +106,8 @@ class BacktestEngine:
         playback_speed: str = "normal",
         decision_mode: str = "every_candle",
         decision_interval_candles: int = 1,
+        indicator_readiness_threshold: float = 80.0,
+        user_id: str = "",
     ) -> None:
         """
         Start a backtest session.
@@ -213,9 +215,20 @@ class BacktestEngine:
                 mode=agent.mode
             )
             
-            # Compute when it's safe to start asking the LLM for decisions
-            # (after all requested indicators have enough history).
-            decision_start_index = IndicatorCalculator.compute_min_history(agent.indicators)
+            # Compute when it's safe to start asking the LLM for decisions.
+            # Use dynamic indicator readiness check (user-configured percentage of indicators ready)
+            # instead of waiting for ALL indicators (which could be 200+ candles
+            # if SMA_200 or EMA_200 is enabled).
+            # Convert percentage (0-100) to decimal (0.0-1.0)
+            readiness_threshold_decimal = indicator_readiness_threshold / 100.0
+            decision_start_index = indicator_calculator.find_first_ready_index(
+                min_ready_percentage=readiness_threshold_decimal
+            )
+            
+            logger.info(
+                f"Decision start index: {decision_start_index} "
+                f"(using dynamic indicator readiness check, {indicator_readiness_threshold}% threshold)"
+            )
             
             # Create session state
             session_state = SessionState(
@@ -226,11 +239,14 @@ class BacktestEngine:
                 position_manager=position_manager,
                 indicator_calculator=indicator_calculator,
                 ai_trader=ai_trader,
-                decision_start_index=decision_start_index,
+                 decision_start_index=decision_start_index,
                 allow_leverage=allow_leverage,
                 playback_speed=playback_speed,
                 decision_mode=decision_mode,
                 decision_interval_candles=decision_interval_candles,
+                user_id=user_id,
+                asset=asset,
+                timeframe=timeframe,
             )
             
             # Store session state

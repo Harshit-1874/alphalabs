@@ -66,7 +66,16 @@ const indicatorCategories = [
       { id: "obv", name: "OBV", description: "On Balance Volume - Volume flow" },
       { id: "vwap", name: "VWAP", description: "Volume Weighted Average Price" },
       { id: "mfi", name: "MFI", description: "Money Flow Index - Volume-weighted RSI" },
+      { id: "cmf", name: "CMF", description: "Chaikin Money Flow - Volume-weighted price trend" },
       { id: "ad", name: "A/D Line", description: "Accumulation/Distribution" },
+    ],
+  },
+  {
+    id: "advanced",
+    name: "Advanced",
+    indicators: [
+      { id: "supertrend", name: "Supertrend", description: "Trend-following indicator using ATR" },
+      { id: "zscore", name: "Z-Score", description: "Statistical mean reversion indicator" },
     ],
   },
 ];
