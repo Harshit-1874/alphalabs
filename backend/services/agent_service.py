@@ -55,13 +55,12 @@ class AgentService:
         )
         return result.scalar_one()
 
-    async def get_agent(self, user_id: UUID, agent_id: UUID) -> Optional[Agent]:
+    async def get_agent(self, user_id: UUID, agent_id: UUID, include_archived: bool = False) -> Optional[Agent]:
         """Get a single agent by ID."""
-        result = await self.db.execute(
-            select(Agent)
-            .options(joinedload(Agent.api_key))
-            .where(Agent.id == agent_id, Agent.user_id == user_id)
-        )
+        query = select(Agent).options(joinedload(Agent.api_key)).where(Agent.id == agent_id, Agent.user_id == user_id)
+        if not include_archived:
+            query = query.where(Agent.is_archived == False)
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def list_agents(
@@ -75,7 +74,11 @@ class AgentService:
         """List agents for a user."""
         query = select(Agent).options(joinedload(Agent.api_key)).where(Agent.user_id == user_id)
         
-        if not include_archived:
+        if include_archived:
+            # When showing archived, only show archived agents
+            query = query.where(Agent.is_archived == True)
+        else:
+            # When not showing archived, only show active agents
             query = query.where(Agent.is_archived == False)
         
         # Apply sorting based on sort parameter
@@ -136,6 +139,25 @@ class AgentService:
         else:
             agent.is_archived = True
         
+        await self.db.commit()
+        return True
+
+    async def restore_agent(self, user_id: UUID, agent_id: UUID) -> bool:
+        """Restore an archived agent."""
+        # Get agent including archived ones
+        result = await self.db.execute(
+            select(Agent)
+            .options(joinedload(Agent.api_key))
+            .where(Agent.id == agent_id, Agent.user_id == user_id)
+        )
+        agent = result.scalar_one_or_none()
+        if not agent:
+            return False
+        
+        if not agent.is_archived:
+            return True  # Already not archived
+        
+        agent.is_archived = False
         await self.db.commit()
         return True
 

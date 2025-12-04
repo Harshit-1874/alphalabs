@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/animated-select";
 import { cn } from "@/lib/utils";
 import { useResultsApi, type ResultListParams } from "@/hooks/use-results-api";
+import { useResultsStore } from "@/lib/stores/results-store";
 import type { ResultListItem, ResultFilters, ResultPagination, ResultsStats } from "@/types/result";
 
 interface ResultCardProps {
@@ -121,6 +122,7 @@ const DEFAULT_FILTERS: ResultFilters = {
 
 export function ResultsList() {
   const { fetchResults, fetchStats } = useResultsApi();
+  const refreshKey = useResultsStore((state) => state.refreshKey);
   const [stats, setStats] = useState<ResultsStats>(DEFAULT_STATS);
   const [results, setResults] = useState<ResultListItem[]>([]);
   const [filters, setFilters] = useState<ResultFilters>(DEFAULT_FILTERS);
@@ -189,6 +191,16 @@ export function ResultsList() {
   useEffect(() => {
     void loadResults();
   }, [loadResults]);
+
+  // Refresh when refreshKey changes (triggered by store)
+  // Only depend on refreshKey, not the callbacks, to avoid infinite loops
+  useEffect(() => {
+    if (refreshKey > 0) {
+      void loadStats();
+      void loadResults();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const handleSearchChange = (value: string) => {
     setFilters((prev) => ({ ...prev, search: value }));

@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Filter, ArrowUpDown, Plus, X } from "lucide-react";
+import { Search, Filter, ArrowUpDown, Plus, X, Archive } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,12 @@ import { useAgentsStore } from "@/lib/stores";
 import { useModels } from "@/hooks/use-models";
 import type { AgentMode } from "@/types";
 
-export function AgentsPageHeader() {
+interface AgentsPageHeaderProps {
+  showArchived?: boolean;
+  onToggleArchived?: () => void;
+}
+
+export function AgentsPageHeader({ showArchived = false, onToggleArchived }: AgentsPageHeaderProps) {
   const {
     agents,
     filters,
@@ -193,6 +198,19 @@ export function AgentsPageHeader() {
             </AnimatedDropdownCheckboxItem>
           </AnimatedDropdownContent>
         </AnimatedDropdown>
+
+        {/* Show Archived Toggle */}
+        {onToggleArchived && (
+          <Button
+            variant={showArchived ? "default" : "outline"}
+            size="sm"
+            className="gap-2"
+            onClick={onToggleArchived}
+          >
+            <Archive className="h-4 w-4" />
+            {showArchived ? "Hide Archived" : "Show Archived"}
+          </Button>
+        )}
       </div>
     </div>
   );

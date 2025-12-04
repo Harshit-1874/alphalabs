@@ -63,3 +63,6 @@ class AgentResponse(AgentBase):
 class AgentListResponse(BaseModel):
     agents: List[AgentResponse]
     total: int
+
+class AgentDuplicateRequest(BaseModel):
+    new_name: str = Field(..., min_length=2, max_length=100)

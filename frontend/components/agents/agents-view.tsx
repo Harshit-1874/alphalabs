@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, List, Bot, Plus, Loader2 } from "lucide-react";
+import { LayoutGrid, List, Bot, Plus, Loader2, Archive } from "lucide-react";
 import Link from "next/link";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,20 @@ function EmptyState() {
           Create Your First Agent
         </Link>
       </Button>
+    </div>
+  );
+}
+
+function NoArchivedState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="mb-6 rounded-full bg-muted/50 p-6">
+        <Archive className="h-12 w-12 text-muted-foreground" />
+      </div>
+      <h3 className="font-mono text-xl font-semibold">No archived agents</h3>
+      <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+        You don't have any archived agents. Archived agents will appear here when you delete them.
+      </p>
     </div>
   );
 }
@@ -70,9 +84,13 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
   );
 }
 
-export function AgentsView() {
+interface AgentsViewProps {
+  showArchived?: boolean;
+}
+
+export function AgentsView({ showArchived = false }: AgentsViewProps) {
   const [view, setView] = useState<"grid" | "list">("grid");
-  const { agents, total, isLoading, error, filters, updateFilters, refetch } = useAgents();
+  const { agents, total, isLoading, error, filters, updateFilters, refetch } = useAgents(undefined, showArchived);
 
   const hasFilters = !!(filters.search || filters.mode || filters.model);
 
@@ -86,8 +104,13 @@ export function AgentsView() {
     return <ErrorState error={error} onRetry={refetch} />;
   }
 
-  // Empty state (no agents at all)
-  if (!isLoading && agents.length === 0 && !hasFilters) {
+  // Empty state for archived view
+  if (showArchived && !isLoading && agents.length === 0 && !hasFilters) {
+    return <NoArchivedState />;
+  }
+
+  // Empty state (no agents at all) - only show when not viewing archived
+  if (!showArchived && !isLoading && agents.length === 0 && !hasFilters) {
     return <EmptyState />;
   }
 
@@ -133,7 +156,7 @@ export function AgentsView() {
           {agents.map((agent) => (
             <AgentCard key={agent.id} agent={agent} />
           ))}
-          <CreateAgentCard />
+          {!showArchived && <CreateAgentCard />}
         </div>
       )}
 

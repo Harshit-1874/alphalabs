@@ -30,7 +30,7 @@ import { Separator } from "@/components/ui/separator";
 import { ShiftCard } from "@/components/ui/shift-card";
 import { cn } from "@/lib/utils";
 import { CandlestickChart } from "@/components/charts/candlestick-chart";
-import { useAgentsStore, useArenaStore, useDynamicIslandStore } from "@/lib/stores";
+import { useAgentsStore, useArenaStore, useDynamicIslandStore, useResultsStore } from "@/lib/stores";
 import { useArenaApi } from "@/hooks/use-arena-api";
 import { useBacktestWebSocket, type WebSocketEvent } from "@/hooks/use-backtest-websocket";
 import { useResultsApi } from "@/hooks/use-results-api";
@@ -56,6 +56,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     clearActiveSessionId,
   } = useArenaStore();
   const { agents } = useAgentsStore();
+  const { triggerRefresh: triggerResultsRefresh } = useResultsStore();
   const { getBacktestStatus } = useArenaApi();
   const { fetchTrades, fetchReasoning } = useResultsApi();
   
@@ -261,6 +262,8 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         if (event.data?.result_id) {
           setResultId(event.data.result_id);
           clearActiveSessionId();
+          // Trigger refresh of results store so new result appears
+          triggerResultsRefresh();
           // Navigate to results page
           setTimeout(() => {
             router.push(`/dashboard/results/${event.data.result_id}`);
@@ -268,7 +271,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         }
         break;
     }
-  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId]);
+  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId, triggerResultsRefresh]);
 
   // Connect to WebSocket
   const { isConnected, sessionState, error: wsError } = useBacktestWebSocket(

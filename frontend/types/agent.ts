@@ -15,6 +15,7 @@ export interface Agent {
   bestPnL: number | null;
   createdAt: Date;
   updatedAt: Date;
+  isArchived?: boolean;
   // Stats for arena config
   stats: AgentStats;
 }

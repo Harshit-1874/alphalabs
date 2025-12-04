@@ -27,14 +27,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { AgentDetailViewProps } from "@/types/agent";
+import { useAgents } from "@/hooks/use-agents";
+import { useAgentsStore } from "@/lib/stores";
+import { DeleteAgentDialog } from "../delete-agent-dialog";
+import type { AgentDetailViewProps, Agent, AgentStats } from "@/types/agent";
 
 // Mock data - in real app from API
-const mockAgent = {
+const mockAgent: Agent = {
   id: "1",
   name: "α-1",
   model: "DeepSeek-R1",
-  mode: "monk" as const,
+  mode: "monk",
   indicators: ["RSI", "MACD", "EMA", "ATR", "Volume", "Stochastic", "CCI", "ADX"],
   customIndicators: [{ name: "Secret_Sauce", formula: "(close - sma_50) / atr_14" }],
   strategyPrompt: `My trading philosophy:
@@ -49,30 +52,53 @@ const mockAgent = {
 
 5. If uncertain, HOLD. Capital preservation is priority.`,
   apiKeyMasked: "sk-or-v1-••••••••",
+  testsRun: 12,
+  bestPnL: 47.2,
   createdAt: new Date("2025-11-15"),
   updatedAt: new Date("2025-11-24"),
+  isArchived: false,
   stats: {
     totalTests: 12,
+    profitableTests: 7,
     bestPnL: 47.2,
     avgWinRate: 58,
     avgDrawdown: -8.3,
-  },
+  } as AgentStats,
 };
 
 export function AgentDetailView({ agentId }: AgentDetailViewProps) {
   const router = useRouter();
-  const agent = mockAgent; // In real app, fetch by agentId
+  const { agents } = useAgentsStore();
+  const { duplicateAgent } = useAgents();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
 
-  const handleDelete = () => {
-    // In real app, call API to delete agent
-    toast.success(`Agent "${agent.name}" deleted successfully`);
-    router.push("/dashboard/agents");
-  };
+  // Find the actual agent from store
+  const agent = agents.find((a) => a.id === agentId);
+  
+  // Fallback to mock if not found (for development)
+  const displayAgent = agent || mockAgent;
 
-  const handleDuplicate = () => {
-    // In real app, call API to duplicate agent
-    toast.success(`Agent "${agent.name}" duplicated`);
+  const handleDuplicate = async () => {
+    if (isDuplicating || !agent) {
+      if (!agent) {
+        toast.error("Agent not found");
+      }
+      return;
+    }
+    
+    setIsDuplicating(true);
+    try {
+      const newName = `${agent.name} (Copy)`;
+      const duplicated = await duplicateAgent(agentId, newName);
+      toast.success(`Agent "${newName}" created successfully!`);
+      router.push(`/dashboard/agents/${duplicated.id}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to duplicate agent";
+      toast.error(errorMessage);
+    } finally {
+      setIsDuplicating(false);
+    }
   };
 
   return (
@@ -95,21 +121,21 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-mono text-2xl font-bold">{agent.name}</h1>
+                <h1 className="font-mono text-2xl font-bold">{displayAgent.name}</h1>
                 <Badge
                   variant="outline"
                   className={cn(
-                    agent.mode === "monk"
+                    displayAgent.mode === "monk"
                       ? "border-[hsl(var(--brand-lavender)/0.3)] text-[hsl(var(--brand-lavender))]"
                       : "border-primary/30 text-primary"
                   )}
                 >
-                  {agent.mode === "monk" ? "Monk" : "Omni"}
+                  {displayAgent.mode === "monk" ? "Monk" : "Omni"}
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                {agent.model} • Created{" "}
-                {agent.createdAt.toLocaleDateString("en-US", {
+                {displayAgent.model} • Created{" "}
+                {displayAgent.createdAt.toLocaleDateString("en-US", {
                   month: "short",
                   day: "numeric",
                   year: "numeric",
@@ -151,9 +177,12 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
                 </Button>
               </AnimatedDropdownTrigger>
               <AnimatedDropdownContent align="end">
-                <AnimatedDropdownItem onSelect={handleDuplicate}>
+                <AnimatedDropdownItem 
+                  onSelect={handleDuplicate}
+                  disabled={isDuplicating || !agent}
+                >
                   <Copy className="mr-2 h-4 w-4" />
-                  Duplicate
+                  {isDuplicating ? "Duplicating..." : "Duplicate"}
                 </AnimatedDropdownItem>
                 <AnimatedDropdownItem onSelect={() => toast.info("Export coming soon")}>
                   <FileDown className="mr-2 h-4 w-4" />
@@ -172,26 +201,13 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
           </div>
 
           {/* Delete Confirmation Dialog */}
-          <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Agent?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete <span className="font-mono font-medium text-foreground">{agent.name}</span>? 
-                  This action cannot be undone. All test history and results associated with this agent will also be deleted.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction 
-                  onClick={handleDelete}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete Agent
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <DeleteAgentDialog
+            agentId={agentId}
+            agentName={displayAgent.name}
+            open={showDeleteDialog}
+            onOpenChange={setShowDeleteDialog}
+            isArchived={displayAgent.isArchived}
+          />
         </div>
       </div>
 
@@ -200,28 +216,28 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
         <Card className="border-border/50 bg-card/30">
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Tests</p>
-            <p className="mt-1 font-mono text-2xl font-bold">{agent.stats.totalTests}</p>
+            <p className="mt-1 font-mono text-2xl font-bold">{displayAgent.stats.totalTests}</p>
           </CardContent>
         </Card>
         <Card className="border-border/50 bg-card/30">
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Best PnL</p>
             <p className="mt-1 font-mono text-2xl font-bold text-[hsl(var(--accent-profit))]">
-              +{agent.stats.bestPnL}%
+              +{displayAgent.stats.bestPnL}%
             </p>
           </CardContent>
         </Card>
         <Card className="border-border/50 bg-card/30">
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Win Rate</p>
-            <p className="mt-1 font-mono text-2xl font-bold">{agent.stats.avgWinRate}%</p>
+            <p className="mt-1 font-mono text-2xl font-bold">{displayAgent.stats.avgWinRate}%</p>
           </CardContent>
         </Card>
         <Card className="border-border/50 bg-card/30">
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Avg Drawdown</p>
             <p className="mt-1 font-mono text-2xl font-bold text-[hsl(var(--accent-red))]">
-              {agent.stats.avgDrawdown}%
+              {displayAgent.stats.avgDrawdown}%
             </p>
           </CardContent>
         </Card>
@@ -243,7 +259,7 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             </CardHeader>
             <CardContent>
               <p className="whitespace-pre-wrap font-mono text-sm text-muted-foreground">
-                {agent.strategyPrompt.slice(0, 300)}...
+                {displayAgent.strategyPrompt.slice(0, 300)}...
               </p>
               <Button variant="link" className="mt-2 h-auto p-0 text-xs">
                 Show Full Strategy
@@ -261,28 +277,28 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Name</span>
-                <span className="font-mono text-sm">{agent.name}</span>
+                <span className="font-mono text-sm">{displayAgent.name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Mode</span>
                 <Badge
                   variant="outline"
                   className={cn(
-                    agent.mode === "monk"
+                    displayAgent.mode === "monk"
                       ? "border-[hsl(var(--brand-lavender)/0.3)] text-[hsl(var(--brand-lavender))]"
                       : "border-primary/30 text-primary"
                   )}
                 >
-                  {agent.mode === "monk" ? "🧘 Monk Mode" : "👁️ Omni Mode"}
+                  {displayAgent.mode === "monk" ? "🧘 Monk Mode" : "👁️ Omni Mode"}
                 </Badge>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Created</span>
-                <span className="text-sm">{agent.createdAt.toLocaleDateString()}</span>
+                <span className="text-sm">{displayAgent.createdAt.toLocaleDateString()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Last Updated</span>
-                <span className="text-sm">{agent.updatedAt.toLocaleDateString()}</span>
+                <span className="text-sm">{displayAgent.updatedAt.toLocaleDateString()}</span>
               </div>
             </CardContent>
           </Card>
@@ -295,12 +311,12 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Model</span>
-                <span className="font-mono text-sm">{agent.model}</span>
+                <span className="font-mono text-sm">{displayAgent.model}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">API Key</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">{agent.apiKeyMasked}</span>
+                  <span className="font-mono text-sm">{displayAgent.apiKeyMasked}</span>
                   <Button variant="ghost" size="sm" className="h-6 text-xs">
                     Reveal
                   </Button>
@@ -320,23 +336,23 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             <CardContent className="space-y-4">
               <div>
                 <p className="mb-2 text-sm text-muted-foreground">
-                  Indicators ({agent.indicators.length})
+                  Indicators ({displayAgent.indicators.length})
                 </p>
                 {/* Horizontally scrollable indicator tags */}
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                  {agent.indicators.map((ind) => (
+                  {displayAgent.indicators.map((ind) => (
                     <Badge key={ind} variant="secondary" className="shrink-0">
                       {ind}
                     </Badge>
                   ))}
                 </div>
               </div>
-              {agent.customIndicators.length > 0 && (
+              {displayAgent.customIndicators.length > 0 && (
                 <div>
                   <p className="mb-2 text-sm text-muted-foreground">
-                    Custom Indicators ({agent.customIndicators.length})
+                    Custom Indicators ({displayAgent.customIndicators.length})
                   </p>
-                  {agent.customIndicators.map((ind) => (
+                  {displayAgent.customIndicators.map((ind) => (
                     <div
                       key={ind.name}
                       className="rounded-lg border border-border/50 bg-muted/20 p-3"
@@ -359,7 +375,7 @@ export function AgentDetailView({ agentId }: AgentDetailViewProps) {
             </CardHeader>
             <CardContent>
               <pre className="whitespace-pre-wrap rounded-lg border border-border/50 bg-muted/20 p-4 font-mono text-sm text-muted-foreground">
-                {agent.strategyPrompt}
+                {displayAgent.strategyPrompt}
               </pre>
             </CardContent>
           </Card>

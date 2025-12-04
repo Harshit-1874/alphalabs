@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -22,6 +22,7 @@ interface DeleteAgentDialogProps {
     agentName: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    isArchived?: boolean;
 }
 
 export function DeleteAgentDialog({
@@ -29,11 +30,19 @@ export function DeleteAgentDialog({
     agentName,
     open,
     onOpenChange,
+    isArchived = false,
 }: DeleteAgentDialogProps) {
     const { deleteAgent } = useAgents();
     const { toast } = useToast();
     const [isDeleting, setIsDeleting] = useState(false);
-    const [permanentDelete, setPermanentDelete] = useState(false);
+    const [permanentDelete, setPermanentDelete] = useState(isArchived); // Default to true for archived agents
+
+    // Reset permanentDelete when dialog opens
+    useEffect(() => {
+        if (open) {
+            setPermanentDelete(isArchived);
+        }
+    }, [open, isArchived]);
 
     const handleDelete = async () => {
         if (!agentId) return;
@@ -48,7 +57,7 @@ export function DeleteAgentDialog({
                     : `${agentName} has been archived`,
             });
             onOpenChange(false);
-            setPermanentDelete(false);
+            setPermanentDelete(isArchived); // Reset to default based on archived status
         } catch (err) {
             toast({
                 title: "Error",
@@ -64,7 +73,9 @@ export function DeleteAgentDialog({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {agentName}?</AlertDialogTitle>
+                    <AlertDialogTitle>
+                        {isArchived ? "Permanently Delete" : "Delete"} {agentName}?
+                    </AlertDialogTitle>
                     <AlertDialogDescription>
                         {permanentDelete
                             ? "This will permanently delete the agent and all associated data. This action cannot be undone."
@@ -72,19 +83,21 @@ export function DeleteAgentDialog({
                     </AlertDialogDescription>
                 </AlertDialogHeader>
 
-                <div className="flex items-center space-x-2 py-2">
-                    <Checkbox
-                        id="permanent-delete"
-                        checked={permanentDelete}
-                        onCheckedChange={(checked) => setPermanentDelete(checked as boolean)}
-                    />
-                    <Label
-                        htmlFor="permanent-delete"
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                    >
-                        Permanently delete (cannot be undone)
-                    </Label>
-                </div>
+                {!isArchived && (
+                    <div className="flex items-center space-x-2 py-2">
+                        <Checkbox
+                            id="permanent-delete"
+                            checked={permanentDelete}
+                            onCheckedChange={(checked) => setPermanentDelete(checked as boolean)}
+                        />
+                        <Label
+                            htmlFor="permanent-delete"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                            Permanently delete (cannot be undone)
+                        </Label>
+                    </div>
+                )}
 
                 <AlertDialogFooter>
                     <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>

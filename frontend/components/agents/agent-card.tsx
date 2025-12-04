@@ -16,6 +16,11 @@ import {
   AnimatedDropdownTrigger,
 } from "@/components/ui/animated-dropdown";
 import { cn } from "@/lib/utils";
+import { useAgents } from "@/hooks/use-agents";
+import { toast } from "sonner";
+import { useState } from "react";
+import { DeleteAgentDialog } from "./delete-agent-dialog";
+import { RotateCcw } from "lucide-react";
 
 interface Agent {
   id: string;
@@ -26,6 +31,7 @@ interface Agent {
   testsRun: number;
   bestPnL: number | null;
   createdAt: Date;
+  isArchived?: boolean;
 }
 
 interface AgentCardProps {
@@ -48,7 +54,10 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
   if (variant === "list") {
     return (
       <Card
-        className="group cursor-pointer border-border/50 bg-card/50 transition-colors hover:bg-muted/30"
+        className={cn(
+          "group cursor-pointer border-border/50 bg-card/50 transition-colors hover:bg-muted/30",
+          agent.isArchived && "opacity-60"
+        )}
         onClick={handleCardClick}
       >
         <CardContent className="flex items-center gap-4 p-4">
@@ -61,6 +70,11 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm font-semibold">{agent.name}</span>
+              {agent.isArchived && (
+                <Badge variant="secondary" className="text-[10px]">
+                  Archived
+                </Badge>
+              )}
               <Badge
                 variant="outline"
                 className={cn(
@@ -132,7 +146,7 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
                 <Edit className="h-4 w-4" />
               </Button>
             </motion.div>
-            <AgentMoreMenu agentId={agent.id} agentName={agent.name} />
+            <AgentMoreMenu agentId={agent.id} agentName={agent.name} isArchived={agent.isArchived} />
           </div>
         </CardContent>
       </Card>
@@ -141,7 +155,10 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
 
   return (
     <Card
-      className="group cursor-pointer border-border/50 bg-card/50 transition-all hover:border-border/80 hover:bg-muted/30"
+      className={cn(
+        "group cursor-pointer border-border/50 bg-card/50 transition-all hover:border-border/80 hover:bg-muted/30",
+        agent.isArchived && "opacity-60"
+      )}
       onClick={handleCardClick}
     >
       <CardHeader className="pb-3">
@@ -151,12 +168,19 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
               <Bot className="h-5 w-5 text-muted-foreground" />
             </div>
             <div>
-              <h3 className="font-mono text-base font-semibold">{agent.name}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-mono text-base font-semibold">{agent.name}</h3>
+                {agent.isArchived && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    Archived
+                  </Badge>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">{agent.model}</p>
             </div>
           </div>
           <div onClick={(e) => e.stopPropagation()}>
-            <AgentMoreMenu agentId={agent.id} agentName={agent.name} />
+            <AgentMoreMenu agentId={agent.id} agentName={agent.name} isArchived={agent.isArchived} />
           </div>
         </div>
       </CardHeader>
@@ -249,30 +273,97 @@ export function AgentCard({ agent, variant = "grid" }: AgentCardProps) {
   );
 }
 
-function AgentMoreMenu({ agentId, agentName }: { agentId: string; agentName: string }) {
+function AgentMoreMenu({ agentId, agentName, isArchived }: { agentId: string; agentName: string; isArchived?: boolean }) {
+  const { duplicateAgent, restoreAgent, deleteAgent } = useAgents();
+  const [isDuplicating, setIsDuplicating] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const handleDuplicate = async () => {
+    if (isDuplicating) return;
+    
+    setIsDuplicating(true);
+    try {
+      const newName = `${agentName} (Copy)`;
+      await duplicateAgent(agentId, newName);
+      toast.success(`Agent "${newName}" created successfully!`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to duplicate agent";
+      toast.error(errorMessage);
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (isRestoring) return;
+    
+    setIsRestoring(true);
+    try {
+      await restoreAgent(agentId);
+      toast.success(`Agent "${agentName}" restored successfully!`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to restore agent";
+      toast.error(errorMessage);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
-    <AnimatedDropdown>
-      <AnimatedDropdownTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <MoreVertical className="h-4 w-4" />
-        </Button>
-      </AnimatedDropdownTrigger>
+    <>
+      <AnimatedDropdown>
+        <AnimatedDropdownTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </AnimatedDropdownTrigger>
       <AnimatedDropdownContent align="end">
-        <AnimatedDropdownItem onSelect={() => console.log("Duplicate", agentId)}>
-          <Copy className="mr-2 h-4 w-4" />
-          Duplicate Agent
-        </AnimatedDropdownItem>
-        <AnimatedDropdownItem onSelect={() => console.log("Export", agentId)}>
-          <FileDown className="mr-2 h-4 w-4" />
-          Export Config
-        </AnimatedDropdownItem>
-        <AnimatedDropdownSeparator />
-        <AnimatedDropdownItem destructive onSelect={() => console.log("Delete", agentId)}>
-          <Trash2 className="mr-2 h-4 w-4" />
-          Delete Agent
-        </AnimatedDropdownItem>
+        {isArchived ? (
+          <>
+            <AnimatedDropdownItem 
+              onSelect={handleRestore}
+              disabled={isRestoring}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              {isRestoring ? "Restoring..." : "Restore Agent"}
+            </AnimatedDropdownItem>
+            <AnimatedDropdownSeparator />
+            <AnimatedDropdownItem destructive onSelect={() => setShowDeleteDialog(true)}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Permanently
+            </AnimatedDropdownItem>
+          </>
+        ) : (
+          <>
+            <AnimatedDropdownItem 
+              onSelect={handleDuplicate}
+              disabled={isDuplicating}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              {isDuplicating ? "Duplicating..." : "Duplicate Agent"}
+            </AnimatedDropdownItem>
+            <AnimatedDropdownItem onSelect={() => console.log("Export", agentId)}>
+              <FileDown className="mr-2 h-4 w-4" />
+              Export Config
+            </AnimatedDropdownItem>
+            <AnimatedDropdownSeparator />
+            <AnimatedDropdownItem destructive onSelect={() => setShowDeleteDialog(true)}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Agent
+            </AnimatedDropdownItem>
+          </>
+        )}
       </AnimatedDropdownContent>
-    </AnimatedDropdown>
+      </AnimatedDropdown>
+      <DeleteAgentDialog
+        agentId={agentId}
+        agentName={agentName}
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        isArchived={isArchived}
+      />
+    </>
   );
 }
 

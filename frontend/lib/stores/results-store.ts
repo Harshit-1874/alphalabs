@@ -23,6 +23,10 @@ interface ResultsState {
   // Selection
   selectResult: (id: string | null) => void;
   
+  // Refresh trigger - increment to trigger refresh
+  refreshKey: number;
+  triggerRefresh: () => void;
+  
   // Computed
   filteredResults: () => TestResult[];
   
@@ -46,6 +50,10 @@ export const useResultsStore = create<ResultsState>((set, get) => ({
   results: DUMMY_RESULTS,
   stats: DUMMY_RESULTS_STATS,
   selectedResultId: null,
+
+  // Refresh trigger
+  refreshKey: 0,
+  triggerRefresh: () => set((state) => ({ refreshKey: state.refreshKey + 1 })),
 
   // Filters
   filters: defaultFilters,

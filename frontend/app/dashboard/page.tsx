@@ -1,11 +1,27 @@
+"use client";
+
+import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { StatsCardRow } from "@/components/dashboard/stats-card-row";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { LiveSessionsPanel } from "@/components/dashboard/live-sessions-panel";
 import { QuickStartGuide } from "@/components/dashboard/quick-start-guide";
 import { PageTransition } from "@/components/ui/page-transition";
+import { useDashboardDataContext } from "@/components/providers/dashboard-data-provider";
 
 export default function DashboardPage() {
+  const { refresh } = useDashboardDataContext();
+  const pathname = usePathname();
+
+  // Refresh dashboard data when navigating to this page
+  useEffect(() => {
+    if (pathname === "/dashboard") {
+      void refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
   return (
     <PageTransition className="space-y-4 sm:space-y-6">
       {/* Page Header */}

@@ -13,6 +13,8 @@ import { StepModelApi } from "./step-model-api";
 import { StepDataBuffet } from "./step-data-buffet";
 import { StepStrategyPrompt } from "./step-strategy-prompt";
 import { useAgentsStore } from "@/lib/stores";
+import { useAgents } from "@/hooks/use-agents";
+import { useApiKeys } from "@/hooks/use-api-keys";
 import type { AgentFormData } from "@/types/agent";
 
 const steps = [
@@ -29,6 +31,8 @@ interface AgentEditWizardProps {
 export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
   const router = useRouter();
   const { agents } = useAgentsStore();
+  const { updateAgent } = useAgents();
+  const { createApiKey } = useApiKeys();
   // Start at Data Buffet (step 3) when editing - most common edit
   const [currentStep, setCurrentStep] = useState(3);
   const [isLoading, setIsLoading] = useState(true);
@@ -99,15 +103,57 @@ export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
+    
     setIsSaving(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // In real app, call API to update agent
-    console.log("Updating agent:", agentId, formData);
-    
-    toast.success(`Agent "${formData.name}" updated successfully`);
-    router.push(`/dashboard/agents/${agentId}`);
+    try {
+      let apiKeyId: string | undefined = undefined;
+
+      // If a new API key is provided (starts with "sk-"), save it first
+      if (formData.apiKey && formData.apiKey.startsWith("sk-")) {
+        try {
+          const newKey = await createApiKey({
+            provider: "openrouter",
+            api_key: formData.apiKey,
+            label: formData.saveApiKey 
+              ? `${formData.name} - OpenRouter` 
+              : `Temp - ${formData.name}`,
+            set_as_default: formData.saveApiKey,
+          });
+          apiKeyId = newKey.id;
+        } catch (error) {
+          toast.error("Failed to save API key. Please try again.");
+          setIsSaving(false);
+          return;
+        }
+      }
+
+      // Update the agent
+      const updateData: any = {
+        name: formData.name,
+        mode: formData.mode!,
+        model: formData.model,
+        indicators: formData.indicators,
+        custom_indicators: formData.customIndicators.length > 0 ? formData.customIndicators : undefined,
+        strategy_prompt: formData.strategyPrompt,
+      };
+
+      // Only include api_key_id if a new key was provided
+      if (apiKeyId) {
+        updateData.api_key_id = apiKeyId;
+      }
+
+      await updateAgent(agentId, updateData);
+      
+      toast.success(`Agent "${formData.name}" updated successfully!`);
+      router.push(`/dashboard/agents/${agentId}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to update agent";
+      toast.error(errorMessage);
+      console.error("Error updating agent:", error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (isLoading) {
