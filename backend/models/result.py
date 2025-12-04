@@ -326,7 +326,7 @@ class Certificate(Base, UUIDMixin):
             total_trades=42,
             duration_display="30 days",
             test_period="Jan 1 - Jan 31, 2025",
-            share_url="alphalab.io/verify/ALX-2025-1127-A3F8K"
+            share_url="https://example.com/verify/ALX-2025-1127-A3F8K"
         )
     """
     __tablename__ = "certificates"

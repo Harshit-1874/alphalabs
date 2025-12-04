@@ -329,7 +329,7 @@ class MarketDataService:
             )
         
         # Validate date range is not too far in the future
-        if start_date > datetime.now():
+        if start_date > datetime.now(timezone.utc):
             raise ValueError(
                 f"start_date ({start_date}) cannot be in the future"
             )

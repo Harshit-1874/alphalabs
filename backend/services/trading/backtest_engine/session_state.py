@@ -9,7 +9,7 @@ indicator calculation, and AI trading components.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
 from models.agent import Agent
@@ -88,6 +88,6 @@ class SessionState:
         if self.equity_curve is None:
             self.equity_curve = []
         if self.started_at is None:
-            self.started_at = datetime.utcnow()
+            self.started_at = datetime.now(timezone.utc)
         if not self.peak_equity:
             self.peak_equity = self.position_manager.starting_capital

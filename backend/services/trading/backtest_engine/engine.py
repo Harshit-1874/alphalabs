@@ -28,7 +28,7 @@ Usage:
 
 import asyncio
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Dict, Optional, Union
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -254,7 +254,7 @@ class BacktestEngine:
             
             # Update session status to running
             async with self.session_factory() as db:
-                started_at = datetime.utcnow()
+                started_at = datetime.now(timezone.utc)
                 session_state.started_at = started_at
                 await self.database_manager.update_session_status(db, session_id, "running")
                 await self.database_manager.update_session_started_at(db, session_id, started_at)
@@ -304,12 +304,15 @@ class BacktestEngine:
     @staticmethod
     def _coerce_to_datetime(value: Union[datetime, date], field_name: str) -> datetime:
         """
-        Ensure incoming values are datetime objects.
+        Ensure incoming values are datetime objects with timezone awareness (UTC).
         """
         if isinstance(value, datetime):
+            # Ensure timezone-aware (UTC)
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
             return value
         if isinstance(value, date):
-            return datetime.combine(value, datetime.min.time())
+            return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
         raise ValidationError(f"{field_name} must be a date or datetime, got {type(value).__name__}")
     
     def _validate_parameters(
@@ -353,7 +356,7 @@ class BacktestEngine:
                 f"start_date ({start_date.date()}) must be before end_date ({end_date.date()})"
             )
         
-        if start_date > datetime.now():
+        if start_date > datetime.now(timezone.utc):
             raise ValidationError(
                 f"start_date ({start_date.date()}) cannot be in the future"
             )
@@ -463,7 +466,7 @@ class BacktestEngine:
         # Update session status in database
         async with self.session_factory() as db:
             await self.database_manager.update_session_status(db, session_id, "paused")
-            await self.database_manager.update_session_paused_at(db, session_id, datetime.utcnow())
+            await self.database_manager.update_session_paused_at(db, session_id, datetime.now(timezone.utc))
         
         # Broadcast paused event
         await self.broadcaster.broadcast_session_paused(session_id, session_state.current_index)
@@ -588,7 +591,7 @@ class BacktestEngine:
         
         # Update session status
         await self.database_manager.update_session_status(db, session_id, "completed")
-        await self.database_manager.update_session_completed_at(db, session_id, datetime.utcnow())
+        await self.database_manager.update_session_completed_at(db, session_id, datetime.now(timezone.utc))
         
         # Get final stats
         stats = session_state.position_manager.get_stats()
@@ -600,7 +603,7 @@ class BacktestEngine:
             current_equity=stats["current_equity"],
             current_pnl_pct=stats["equity_change_pct"],
             max_drawdown_pct=session_state.max_drawdown_pct,
-            elapsed_seconds=int((datetime.utcnow() - session_state.started_at).total_seconds()) if session_state.started_at else None,
+            elapsed_seconds=int((datetime.now(timezone.utc) - session_state.started_at).total_seconds()) if session_state.started_at else None,
             open_position=None,
             current_candle=session_state.current_index,
         )

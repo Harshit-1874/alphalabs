@@ -59,7 +59,8 @@ async def list_notifications(
         )
         
         unread_count = await service.get_unread_count(user_id=current_user.id)
-        serialized = [service.serialize_notification(n) for n in notifications]
+        # Serialize notifications (now async)
+        serialized = [await service.serialize_notification(n) for n in notifications]
         
         return NotificationListResponse(
             notifications=serialized,
@@ -122,7 +123,7 @@ async def mark_notification_as_read(
                 detail="Notification not found or does not belong to user"
             )
         
-        return service.serialize_notification(notification)
+        return await service.serialize_notification(notification)
     except HTTPException:
         raise
     except Exception as e:

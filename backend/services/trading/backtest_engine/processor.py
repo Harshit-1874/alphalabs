@@ -663,4 +663,11 @@ class CandleProcessor:
     def _compute_elapsed_seconds(self, session_state: Any) -> int:
         if not session_state.started_at:
             return 0
-        return int((datetime.utcnow() - session_state.started_at).total_seconds())
+        # Ensure both datetimes are timezone-aware
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        started = session_state.started_at
+        # If started_at is naive, make it aware (backward compatibility)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        return int((now - started).total_seconds())

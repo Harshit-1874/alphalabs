@@ -29,10 +29,36 @@ class StorageClient:
     
     def __init__(self):
         """Initialize Supabase client."""
-        self.client: Client = create_client(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_KEY
-        )
+        # Use service role key if available (bypasses RLS for backend operations)
+        # Otherwise fall back to anon key
+        supabase_key = settings.SUPABASE_KEY2 or settings.SUPABASE_KEY
+        
+        try:
+            self.client: Client = create_client(
+                settings.SUPABASE_URL,
+                supabase_key
+            )
+        except TypeError as e:
+            if 'proxy' in str(e):
+                # Known issue: Version incompatibility between supabase-py, gotrue, and httpx
+                # This happens when gotrue 2.9.x tries to pass 'proxy' to httpx.Client
+                # but the httpx version doesn't support it, or supabase-py is too old
+                logger.error(
+                    "Supabase client initialization failed due to version incompatibility. "
+                    "Error: %s\n"
+                    "This is a known issue (see: https://github.com/supabase/supabase-py/issues/949). "
+                    "Solutions:\n"
+                    "1. Upgrade supabase-py: pip install --upgrade supabase>=2.9.0\n"
+                    "2. Or ensure compatible versions: pip install supabase>=2.9.0 httpx>=0.26.0",
+                    str(e)
+                )
+                raise Exception(
+                    f"Supabase client initialization failed: {str(e)}\n\n"
+                    "This is a version incompatibility between supabase-py, gotrue, and httpx.\n"
+                    "Fix: pip install --upgrade supabase>=2.9.0 httpx>=0.26.0"
+                ) from e
+            else:
+                raise
         self.storage = self.client.storage
     
     async def upload_file(

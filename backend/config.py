@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     
     # Supabase Configuration
     SUPABASE_URL: str
-    SUPABASE_KEY: str
-    SUPABASE_KEY2: Optional[str] = None
+    SUPABASE_KEY: str  # Anon key (for public operations)
+    SUPABASE_KEY2: Optional[str] = None  # Service role key (for backend operations, bypasses RLS)
     SUPABASE_DB_HOST: Optional[str] = None
     SUPABASE_DB_PORT: Optional[int] = 5432
     SUPABASE_DB_NAME: Optional[str] = "postgres"
@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     
     # Storage / sharing
     CERTIFICATE_BUCKET: str = "certificates"
-    CERTIFICATE_SHARE_BASE_URL: str = "https://alphalab.io/verify"
+    CERTIFICATE_SHARE_BASE_URL: str = "http://localhost:3000/verify"  # Base URL for certificate verification (e.g., https://alphalab.io/verify)
     EXPORT_BUCKET: str = "exports"
     
     model_config = ConfigDict(

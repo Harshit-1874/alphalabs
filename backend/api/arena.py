@@ -500,13 +500,19 @@ async def start_backtest(
     
     if isinstance(start_date_input, datetime):
         start_dt = start_date_input
+        # Ensure timezone-aware (UTC)
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
     else:
-        start_dt = datetime.combine(start_date_input, datetime.min.time())
+        start_dt = datetime.combine(start_date_input, datetime.min.time(), tzinfo=timezone.utc)
     
     if isinstance(end_date_input, datetime):
         end_dt = end_date_input
+        # Ensure timezone-aware (UTC)
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
     else:
-        end_dt = datetime.combine(end_date_input, datetime.min.time())
+        end_dt = datetime.combine(end_date_input, datetime.min.time(), tzinfo=timezone.utc)
     
     start_date = start_dt.date()
     end_date = end_dt.date()
@@ -634,7 +640,13 @@ async def get_backtest_status(
         pnl_pct = stats["equity_change_pct"]
         open_pos = session_state.position_manager.get_position()
         open_pos_data = _serialize_open_position(open_pos)
-        elapsed_seconds = int((datetime.now(timezone.utc) - session_state.started_at).total_seconds()) if session_state.started_at else 0
+        elapsed_seconds = 0
+        if session_state.started_at:
+            # Ensure started_at is timezone-aware (UTC)
+            started_at = session_state.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            elapsed_seconds = int((datetime.now(timezone.utc) - started_at).total_seconds())
         progress_pct = (
             (session_state.current_index / len(session_state.candles)) * 100
             if session_state.candles else 0
@@ -645,7 +657,8 @@ async def get_backtest_status(
                 "status": "running" if not session_state.is_paused else "paused",
                 "agent_id": session_state.agent.id,
                 "agent_name": session_state.agent.name,
-                "asset": session_state.agent.asset if hasattr(session_state, 'asset') else None,
+                "asset": session_state.asset if hasattr(session_state, 'asset') else None,
+                "timeframe": session_state.timeframe if hasattr(session_state, 'timeframe') else None,
                 "current_candle": session_state.current_index,
                 "total_candles": len(session_state.candles),
                 "progress_pct": progress_pct,
@@ -834,6 +847,19 @@ async def start_forward_test(
     )
     db.add(test_session)
     await db.commit()
+
+    notification_service = NotificationService(db)
+    try:
+        await notification_service.create_notification(
+            user_id=current_user.id,
+            type="test_started",
+            title=f"Forward test started • {request.asset.upper()}",
+            message=f"{agent.name} is testing {request.asset.upper()} on {request.timeframe}",
+            session_id=session_id,
+        )
+    except Exception as exc:
+        # Don't block forward test start on notification errors
+        logger.warning("Failed to create test start notification: %s", exc)
     
     auto_stop_config = {
         "enabled": request.auto_stop_on_loss,

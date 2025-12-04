@@ -16,11 +16,13 @@ Data Flow:
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func
+from sqlalchemy.orm import selectinload
 from uuid import UUID
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 
 from models import Notification
+from models.arena import TestSession
 
 
 class NotificationService:
@@ -237,10 +239,10 @@ class NotificationService:
         
         return len(deleted_ids)
 
-    def serialize_notification(self, notification: Notification) -> Dict[str, Any]:
+    async def serialize_notification(self, notification: Notification) -> Dict[str, Any]:
         category = self._map_category(notification.type)
         presentation_type = self._map_presentational_type(notification.type)
-        action_url = self._resolve_action_url(notification)
+        action_url = await self._resolve_action_url(notification)
         return {
             "id": notification.id,
             "type": presentation_type,
@@ -271,9 +273,50 @@ class NotificationService:
             return "info"
         return "success"
 
-    def _resolve_action_url(self, notification: Notification) -> Optional[str]:
+    async def _resolve_action_url(self, notification: Notification) -> Optional[str]:
+        """
+        Resolve the action URL for a notification.
+        
+        Logic:
+        - If result_id exists: route to results page
+        - If session_id exists: 
+          - Query session to get type (backtest/forward) and status
+          - If session is running/paused: route to live arena view
+          - If session is completed: route to results if result_id exists, otherwise arena view
+        """
+        # If result_id exists, always route to results (completed test)
         if notification.result_id:
             return f"/dashboard/results/{notification.result_id}"
+        
+        # If session_id exists, check session type and status
         if notification.session_id:
-            return f"/dashboard/arena/backtest/{notification.session_id}"
+            # Query the session to get its type and status
+            result = await self.db.execute(
+                select(TestSession)
+                .where(TestSession.id == notification.session_id)
+            )
+            session = result.scalar_one_or_none()
+            
+            if not session:
+                # Session not found, can't determine route
+                return None
+            
+            # Determine arena type based on session.type
+            arena_type = session.type  # 'backtest' or 'forward'
+            
+            # If session is still running or paused, route to live view
+            if session.status in ('running', 'paused', 'initializing'):
+                return f"/dashboard/arena/{arena_type}/{notification.session_id}"
+            
+            # If session is completed, check if we have a result_id
+            # (This shouldn't happen often since completed tests should have result_id,
+            # but handle it just in case)
+            if session.status in ('completed', 'stopped', 'failed'):
+                # If notification has result_id, it would have been handled above
+                # Otherwise, route to arena view (which will show completed state)
+                return f"/dashboard/arena/{arena_type}/{notification.session_id}"
+            
+            # Default: route to arena view
+            return f"/dashboard/arena/{arena_type}/{notification.session_id}"
+        
         return None
