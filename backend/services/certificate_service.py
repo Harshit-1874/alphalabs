@@ -44,9 +44,16 @@ class CertificateService:
             db: Async database session
         """
         self.db = db
-        self.storage = StorageClient()
+        self._storage = None  # Lazy initialization
         self.pdf_generator = PDFGenerator()
         self.image_generator = CertificateImageGenerator()
+    
+    @property
+    def storage(self) -> StorageClient:
+        """Lazy initialization of storage client."""
+        if self._storage is None:
+            self._storage = StorageClient()
+        return self._storage
     
     async def generate_certificate(
         self, 

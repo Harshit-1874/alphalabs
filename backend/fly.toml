@@ -5,8 +5,8 @@ app = "alphalabs-backend"
 primary_region = "iad"  # Change to your preferred region (iad = Washington DC, ord = Chicago, etc.)
 
 [build]
-  # Fly.io will auto-detect Python and install dependencies
-  # Make sure requirements.txt is in the backend directory
+  # Use Dockerfile for building
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = "8080"

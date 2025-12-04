@@ -51,7 +51,14 @@ class ExportService:
             db: Async database session
         """
         self.db = db
-        self.storage = StorageClient()
+        self._storage = None  # Lazy initialization
+    
+    @property
+    def storage(self) -> StorageClient:
+        """Lazy initialization of storage client."""
+        if self._storage is None:
+            self._storage = StorageClient()
+        return self._storage
     
     async def create_export(
         self,

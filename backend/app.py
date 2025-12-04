@@ -119,9 +119,13 @@ from api.users import router as user_router
 app = FastAPI(lifespan=lifespan)
 
 # Configure CORS
+# Get allowed origins from environment variable or use defaults
+allowed_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://alphalabs-frontend-oky2.vercel.app")
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

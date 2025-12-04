@@ -29,9 +29,16 @@ class StorageClient:
     
     def __init__(self):
         """Initialize Supabase client."""
-        # Use service role key if available (bypasses RLS for backend operations)
-        # Otherwise fall back to anon key
-        supabase_key = settings.SUPABASE_KEY2 or settings.SUPABASE_KEY
+        # Storage operations require service role key to bypass RLS policies
+        # The anon key cannot upload files due to Supabase Storage RLS restrictions
+        if not settings.SUPABASE_KEY2:
+            raise ValueError(
+                "SUPABASE_KEY2 (service role key) is required for storage operations. "
+                "Get it from Supabase Dashboard -> Settings -> API -> service_role key. "
+                "The anon key cannot bypass Row Level Security policies for storage uploads."
+            )
+        
+        supabase_key = settings.SUPABASE_KEY2
         
         try:
             self.client: Client = create_client(

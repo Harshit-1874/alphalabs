@@ -118,18 +118,16 @@ NEXT_PUBLIC_WS_URL=wss://your-backend-app.fly.dev
 - **Production**: `wss://your-backend-app.fly.dev` (note the `wss://` for secure WebSocket)
 
 ### CORS Configuration
-Update `backend/app.py` CORS settings to include your Vercel frontend URL:
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://your-frontend.vercel.app",  # Add your Vercel URL
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+The CORS configuration is now managed via the `CORS_ALLOWED_ORIGINS` environment variable. By default, it includes `http://localhost:3000` and `https://alphalabs-frontend-oky2.vercel.app`.
+
+To customize allowed origins (e.g., for preview deployments), set the environment variable:
+```bash
+fly secrets set CORS_ALLOWED_ORIGINS="http://localhost:3000,https://your-frontend.vercel.app,https://your-preview.vercel.app"
+```
+
+Or set it in your `.env` file for local development:
+```
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://your-frontend.vercel.app
 ```
 
 ### Fly.io Free Tier Limits
