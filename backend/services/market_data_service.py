@@ -36,7 +36,7 @@ import httpx
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 import yfinance as yf
-from coingecko_sdk import CoinGecko
+from coingecko_sdk import Coingecko
 
 from models import MarketDataCache
 from config import settings
@@ -249,15 +249,15 @@ class MarketDataService:
         # Get your free API key from: https://www.coingecko.com/en/api/pricing
         api_key = getattr(settings, 'COINGECKO_API_KEY', None)
         if api_key:
-            self.coingecko = CoinGecko(api_key=api_key)
-            logger.info("MarketDataService initialized with CoinGecko API key")
+            # CoinGecko SDK uses demo_api_key for free tier, pro_api_key for paid plans
+            # For free demo plan, use demo_api_key
+            self.coingecko = Coingecko(demo_api_key=api_key)
+            logger.info("MarketDataService initialized with CoinGecko API key (demo)")
         else:
-            # Try without API key (may work for some endpoints, but not recommended)
-            self.coingecko = CoinGecko()
-            logger.warning(
-                "MarketDataService initialized without CoinGecko API key. "
-                "Set COINGECKO_API_KEY in .env for better rate limits. "
-                "Get free API key: https://www.coingecko.com/en/api/pricing"
+            # CoinGecko SDK requires an API key - cannot work without it
+            raise ValueError(
+                "COINGECKO_API_KEY is required. "
+                "Get your free API key from: https://www.coingecko.com/en/api/pricing"
             )
     
     def _generate_cache_key(
@@ -496,13 +496,11 @@ class MarketDataService:
             loop = asyncio.get_event_loop()
             
             def fetch_price_sync():
-                return self.coingecko.simple.price(
-                    ids=[coingecko_id],
-                    vs_currencies=['usd'],
+                return self.coingecko.simple.price.get(
+                    ids=coingecko_id,  # String, not list
+                    vs_currencies='usd',  # String, not list
                     include_24hr_change=True,
-                    include_24hr_vol=True,
-                    include_24hr_high=True,
-                    include_24hr_low=True
+                    include_24hr_vol=True
                 )
             
             data = await asyncio.wait_for(
@@ -510,19 +508,32 @@ class MarketDataService:
                 timeout=5.0
             )
             
-            if not data or coingecko_id not in data:
-                raise ValueError(f"No price data from CoinGecko for {coingecko_id}")
+            # Response format: dict with coin_id as key, containing price data
+            if not data or not hasattr(data, coingecko_id):
+                # Try accessing as dict
+                if isinstance(data, dict) and coingecko_id not in data:
+                    raise ValueError(f"No price data from CoinGecko for {coingecko_id}")
+                coin_data = getattr(data, coingecko_id, None) or data.get(coingecko_id, {})
+            else:
+                coin_data = getattr(data, coingecko_id, {})
             
-            coin_data = data[coingecko_id]
-            current_price = float(coin_data.get('usd', 0))
+            # Access price - could be attribute or dict key
+            if hasattr(coin_data, 'usd'):
+                current_price = float(coin_data.usd)
+                high_24h = float(getattr(coin_data, 'usd_24h_high', current_price))
+                low_24h = float(getattr(coin_data, 'usd_24h_low', current_price))
+                volume_24h = float(getattr(coin_data, 'usd_24h_vol', 0))
+                change_pct_24h = float(getattr(coin_data, 'usd_24h_change', 0))
+            else:
+                current_price = float(coin_data.get('usd', 0))
+                high_24h = float(coin_data.get('usd_24h_high', current_price))
+                low_24h = float(coin_data.get('usd_24h_low', current_price))
+                volume_24h = float(coin_data.get('usd_24h_vol', 0))
+                change_pct_24h = float(coin_data.get('usd_24h_change', 0))
             
             if current_price == 0:
                 raise ValueError("Invalid price from CoinGecko")
             
-            high_24h = float(coin_data.get('usd_24h_high', current_price))
-            low_24h = float(coin_data.get('usd_24h_low', current_price))
-            volume_24h = float(coin_data.get('usd_24h_vol', 0))
-            change_pct_24h = float(coin_data.get('usd_24h_change', 0))
             change_24h = current_price * (change_pct_24h / 100) if change_pct_24h else 0
             
             logger.info(
@@ -570,35 +581,51 @@ class MarketDataService:
             return []
         
         # Map timeframe to CoinGecko interval (days)
-        # CoinGecko OHLC endpoint supports: 1, 7, 14, 30, 90, 180, 365, max
-        # We'll calculate days based on timeframe and limit
-        timeframe_days_map = {
-            '15m': 1,  # 1 day for 15m gives ~96 candles
-            '1h': 1,   # 1 day for 1h gives ~24 candles
-            '4h': 7,   # 7 days for 4h gives ~42 candles
-            '1d': 90,  # 90 days for 1d gives ~90 candles
-        }
-        days = timeframe_days_map.get(timeframe.lower(), 1)
+        # CoinGecko OHLC endpoint supports: '1', '7', '14', '30', '90', '180', '365', 'max'
+        # We'll calculate days based on timeframe and limit, then map to allowed values
+        def map_days_to_allowed(days_int: int) -> str:
+            """Map integer days to closest allowed CoinGecko days value."""
+            allowed = [1, 7, 14, 30, 90, 180, 365]
+            if days_int <= 1:
+                return '1'
+            elif days_int <= 7:
+                return '7'
+            elif days_int <= 14:
+                return '14'
+            elif days_int <= 30:
+                return '30'
+            elif days_int <= 90:
+                return '90'
+            elif days_int <= 180:
+                return '180'
+            elif days_int <= 365:
+                return '365'
+            else:
+                return 'max'
         
-        # Adjust days based on limit to get enough data
+        # Calculate days needed based on timeframe and limit
         if timeframe == '15m':
-            days = max(1, (limit // 96) + 1)
+            days_int = max(1, (limit // 96) + 1)
         elif timeframe == '1h':
-            days = max(1, (limit // 24) + 1)
+            days_int = max(1, (limit // 24) + 1)
         elif timeframe == '4h':
-            days = max(7, (limit // 6) + 1)
+            days_int = max(7, (limit // 6) + 1)
         elif timeframe == '1d':
-            days = min(365, max(90, limit))
+            days_int = min(365, max(90, limit))
+        else:
+            days_int = 7
+        
+        days = map_days_to_allowed(days_int)
         
         try:
             import asyncio
             loop = asyncio.get_event_loop()
             
             def fetch_ohlc_sync():
-                return self.coingecko.coins.ohlc(
+                return self.coingecko.coins.ohlc.get(
                     id=coingecko_id,
                     vs_currency='usd',
-                    days=days
+                    days=days  # Must be string: '1', '7', '14', '30', '90', '180', '365', 'max'
                 )
             
             ohlc_data = await asyncio.wait_for(
@@ -610,26 +637,34 @@ class MarketDataService:
                 logger.warning(f"No historical data from CoinGecko for {asset}")
                 return []
             
-            # CoinGecko OHLC format: [timestamp_ms, open, high, low, close]
-            candles = []
-            interval_ms = self.TIMEFRAME_INTERVAL_MS.get(timeframe.lower(), 60 * 60 * 1000)
+            # CoinGecko OHLC format: list of [timestamp_ms, open, high, low, close]
+            # Convert to list if it's not already iterable
+            if not isinstance(ohlc_data, (list, tuple)):
+                # Try to convert response object to list
+                try:
+                    ohlc_data = list(ohlc_data) if hasattr(ohlc_data, '__iter__') else []
+                except:
+                    ohlc_data = []
             
+            candles = []
             for entry in ohlc_data:
                 try:
-                    timestamp_ms = int(entry[0])
-                    timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
-                    
-                    candle = Candle(
-                        timestamp=timestamp,
-                        open=float(entry[1]),
-                        high=float(entry[2]),
-                        low=float(entry[3]),
-                        close=float(entry[4]),
-                        volume=0.0  # CoinGecko OHLC doesn't include volume
-                    )
-                    candles.append(candle)
+                    # Entry format: [timestamp_ms, open, high, low, close]
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 5:
+                        timestamp_ms = int(entry[0])
+                        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+                        
+                        candle = Candle(
+                            timestamp=timestamp,
+                            open=float(entry[1]),
+                            high=float(entry[2]),
+                            low=float(entry[3]),
+                            close=float(entry[4]),
+                            volume=0.0  # CoinGecko OHLC doesn't include volume
+                        )
+                        candles.append(candle)
                 except Exception as e:
-                    logger.debug(f"Error parsing CoinGecko OHLC entry: {e}")
+                    logger.debug(f"Error parsing CoinGecko OHLC entry: {e}, entry={entry}")
                     continue
             
             # Filter and resample to match requested timeframe if needed
@@ -676,7 +711,7 @@ class MarketDataService:
                 days = 1
             
             def fetch_market_chart_sync():
-                return self.coingecko.coins.market_chart(
+                return self.coingecko.coins.market_chart.get(
                     id=coingecko_id,
                     vs_currency='usd',
                     days=min(days, 1)  # Market chart max 1 day for free tier
@@ -1035,20 +1070,41 @@ class MarketDataService:
             end_date.date()
         )
         
-        # Calculate days needed
+        # Calculate days needed and map to allowed values
         duration = end_date - start_date
-        days = max(1, duration.days + 1)
-        days = min(days, 365)  # CoinGecko free tier max is 365 days
+        days_int = max(1, duration.days + 1)
+        days_int = min(days_int, 365)  # CoinGecko free tier max is 365 days
+        
+        # Map to allowed CoinGecko days values: '1', '7', '14', '30', '90', '180', '365', 'max'
+        def map_days_to_allowed(d: int) -> str:
+            if d <= 1:
+                return '1'
+            elif d <= 7:
+                return '7'
+            elif d <= 14:
+                return '14'
+            elif d <= 30:
+                return '30'
+            elif d <= 90:
+                return '90'
+            elif d <= 180:
+                return '180'
+            elif d <= 365:
+                return '365'
+            else:
+                return 'max'
+        
+        days = map_days_to_allowed(days_int)
         
         try:
             import asyncio
             loop = asyncio.get_event_loop()
             
             def fetch_ohlc_sync():
-                return self.coingecko.coins.ohlc(
+                return self.coingecko.coins.ohlc.get(
                     id=coingecko_id,
                     vs_currency='usd',
-                    days=days
+                    days=days  # String: '1', '7', '14', '30', '90', '180', '365', 'max'
                 )
             
             ohlc_data = await asyncio.wait_for(
@@ -1059,28 +1115,37 @@ class MarketDataService:
             if not ohlc_data:
                 raise Exception(f"No data returned from CoinGecko for {coingecko_id}")
             
-            # CoinGecko OHLC format: [timestamp_ms, open, high, low, close]
+            # CoinGecko OHLC format: list of [timestamp_ms, open, high, low, close]
+            # Convert to list if it's not already iterable
+            if not isinstance(ohlc_data, (list, tuple)):
+                try:
+                    ohlc_data = list(ohlc_data) if hasattr(ohlc_data, '__iter__') else []
+                except:
+                    ohlc_data = []
+            
             candles: List[Candle] = []
             for entry in ohlc_data:
                 try:
-                    timestamp_ms = int(entry[0])
-                    timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
-                    
-                    # Filter by date range
-                    if timestamp < start_date or timestamp > end_date:
-                        continue
-                    
-                    candle = Candle(
-                        timestamp=timestamp,
-                        open=float(entry[1]),
-                        high=float(entry[2]),
-                        low=float(entry[3]),
-                        close=float(entry[4]),
-                        volume=0.0  # CoinGecko OHLC doesn't include volume
-                    )
-                    candles.append(candle)
+                    # Entry format: [timestamp_ms, open, high, low, close]
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 5:
+                        timestamp_ms = int(entry[0])
+                        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+                        
+                        # Filter by date range
+                        if timestamp < start_date or timestamp > end_date:
+                            continue
+                        
+                        candle = Candle(
+                            timestamp=timestamp,
+                            open=float(entry[1]),
+                            high=float(entry[2]),
+                            low=float(entry[3]),
+                            close=float(entry[4]),
+                            volume=0.0  # CoinGecko OHLC doesn't include volume
+                        )
+                        candles.append(candle)
                 except Exception as e:
-                    logger.debug(f"Error parsing CoinGecko OHLC entry: {e}")
+                    logger.debug(f"Error parsing CoinGecko OHLC entry: {e}, entry={entry}")
                     continue
             
             # Sort by timestamp
