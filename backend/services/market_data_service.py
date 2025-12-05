@@ -713,11 +713,16 @@ class MarketDataService:
             else:
                 days = 1
             
+            # CoinGecko free tier allows up to 365 days for market_chart
+            # But returns minute-level data for recent periods
+            # We'll request more days to ensure we get enough data points
+            days = min(days, 90)  # Use up to 90 days for better coverage
+            
             def fetch_market_chart_sync():
                 return self.coingecko.coins.market_chart.get(
                     id=coingecko_id,
                     vs_currency='usd',
-                    days=min(days, 1)  # Market chart max 1 day for free tier
+                    days=days
                 )
             
             chart_data = await asyncio.wait_for(
@@ -725,7 +730,12 @@ class MarketDataService:
                 timeout=30.0
             )
             
-            if not chart_data or 'prices' not in chart_data:
+            if not chart_data:
+                logger.warning(f"No chart data returned from CoinGecko for {coingecko_id}")
+                return []
+            
+            if 'prices' not in chart_data:
+                logger.warning(f"No 'prices' key in CoinGecko response for {coingecko_id}. Keys: {chart_data.keys() if hasattr(chart_data, 'keys') else 'not a dict'}")
                 return []
             
             # Convert prices to candles
@@ -733,7 +743,10 @@ class MarketDataService:
             prices = chart_data.get('prices', [])
             
             if not prices:
+                logger.warning(f"Empty prices array from CoinGecko for {coingecko_id}")
                 return []
+            
+            logger.info(f"Processing {len(prices)} price points from CoinGecko for {coingecko_id} {timeframe}")
             
             # Group prices by timeframe interval
             candles = []
@@ -776,10 +789,12 @@ class MarketDataService:
             if current_candle:
                 candles.append(current_candle)
             
+            logger.info(f"Created {len(candles)} candles from {len(prices)} prices for {coingecko_id} {timeframe}")
+            
             return candles[-limit:] if len(candles) > limit else candles
             
         except Exception as e:
-            logger.error(f"Error fetching intraday candles from CoinGecko: {e}")
+            logger.error(f"Error fetching intraday candles from CoinGecko for {coingecko_id} {timeframe}: {e}", exc_info=True)
             return []
     
     async def get_latest_candle(

@@ -81,6 +81,10 @@ export function LiveSessionView({ sessionId }: LiveSessionViewProps) {
   const [forwardError, setForwardError] = useState<string | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
   
+  // Track loading state for reconnection
+  const [isLoadingHistoricalData, setIsLoadingHistoricalData] = useState(true);
+  const [hasReceivedInitialData, setHasReceivedInitialData] = useState(false);
+  
   // Track last price to avoid unnecessary updates
   const lastPriceRef = useRef<number | null>(null);
 
@@ -265,6 +269,7 @@ export function LiveSessionView({ sessionId }: LiveSessionViewProps) {
           if (!event.data?.price) break;
           try {
             const currentPrice = event.data.price;
+            const timestamp = event.data.timestamp ? new Date(event.data.timestamp).getTime() : Date.now();
             
             // Skip if price hasn't changed (avoid unnecessary re-renders)
             if (lastPriceRef.current === currentPrice) {
@@ -275,8 +280,16 @@ export function LiveSessionView({ sessionId }: LiveSessionViewProps) {
             
             setCandlesState((prev) => {
               if (prev.length === 0) {
-                // No candles yet, don't create one - wait for first candle event
-                return [];
+                // No historical candles yet - create a new live candle
+                // This ensures the chart starts showing data immediately
+                return [{
+                  time: timestamp,
+                  open: currentPrice,
+                  high: currentPrice,
+                  low: currentPrice,
+                  close: currentPrice,
+                  volume: 0,
+                }];
               }
               
               const lastCandle = prev[prev.length - 1];
@@ -520,9 +533,41 @@ export function LiveSessionView({ sessionId }: LiveSessionViewProps) {
   useEffect(() => {
     setIsConnectedState(wsConnected);
     console.log("WebSocket connection status:", wsConnected, "Session ID:", sessionId);
-  }, [wsConnected, sessionId]);
+    
+    // When reconnecting, show loading state
+    if (!wsConnected && hasReceivedInitialData) {
+      setIsLoadingHistoricalData(true);
+    }
+  }, [wsConnected, sessionId, hasReceivedInitialData]);
 
   // Removed verbose logging - chart updates are working correctly
+  
+  // Detect when initial data has loaded
+  useEffect(() => {
+    // Wait for WebSocket connection AND candles to arrive before hiding loading
+    // Don't hide just because sessionStats loaded from API - need WebSocket data!
+    const hasData = isConnectedState && candlesState.length > 0;
+    
+    if (hasData && isLoadingHistoricalData) {
+      setIsLoadingHistoricalData(false);
+      setHasReceivedInitialData(true);
+    }
+  }, [candlesState.length, isConnectedState, isLoadingHistoricalData]);
+  
+  // Add a timeout fallback - if we're connected but no data after 10 seconds, stop loading
+  useEffect(() => {
+    if (!isLoadingHistoricalData || !isConnectedState) return;
+    
+    const timeout = setTimeout(() => {
+      if (isLoadingHistoricalData && isConnectedState) {
+        console.log("Data load timeout - showing interface anyway");
+        setIsLoadingHistoricalData(false);
+        setHasReceivedInitialData(true);
+      }
+    }, 10000); // 10 second timeout
+    
+    return () => clearTimeout(timeout);
+  }, [isLoadingHistoricalData, isConnectedState]);
 
   useEffect(() => {
     if (wsError) {
@@ -811,6 +856,96 @@ export function LiveSessionView({ sessionId }: LiveSessionViewProps) {
       <p className="text-xs text-muted-foreground leading-relaxed">{thought.content}</p>
     </motion.div>
   );
+
+  // Show loading skeleton while reconnecting or loading initial data
+  if (isLoadingHistoricalData && !forwardError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-120px)] gap-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="relative">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="w-16 h-16 border-4 border-border rounded-full border-t-[hsl(var(--brand-flame))]"
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Activity className="h-6 w-6 text-[hsl(var(--brand-flame))] animate-pulse" />
+            </div>
+          </div>
+          
+          <div className="text-center space-y-2">
+            <h3 className="text-lg font-semibold">
+              {hasReceivedInitialData ? "Reconnecting to your session" : "Connecting to your session"}
+            </h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              {!isConnectedState 
+                ? "Establishing WebSocket connection..." 
+                : hasReceivedInitialData 
+                  ? "Loading latest data..." 
+                  : "Loading session data..."}
+            </p>
+            {candlesState.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Received {candlesState.length} candles...
+              </p>
+            )}
+          </div>
+        </motion.div>
+        
+        {/* Skeleton cards preview */}
+        <div className="w-full max-w-4xl px-4 space-y-3 opacity-50">
+          <div className="h-12 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="h-24 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+            <div className="h-24 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+            <div className="h-24 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+          </div>
+          <div className="h-[300px] bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+        </div>
+      </div>
+    );
+  }
+  
+  // Show error state if there's a critical error
+  if (forwardError && candlesState.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-120px)] gap-4">
+        <div className="flex flex-col items-center gap-3 max-w-md text-center">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
+            <WifiOff className="h-8 w-8 text-destructive" />
+          </div>
+          <h3 className="text-lg font-semibold">Connection Error</h3>
+          <p className="text-sm text-muted-foreground">{forwardError}</p>
+          <div className="flex gap-2 mt-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                setForwardError(null);
+                setIsLoadingHistoricalData(true);
+                reconnect();
+              }}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry Connection
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => router.push("/dashboard/arena/forward")}
+            >
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Back to Arena
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-120px)] gap-2 sm:gap-3 pb-4">

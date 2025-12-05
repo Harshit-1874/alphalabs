@@ -63,21 +63,29 @@ class Settings(BaseSettings):
     
     # Timeouts (in seconds)
     # How long we wait for an LLM trading decision before falling back to HOLD.
-    # Kept intentionally low so backtests don't freeze the UI if OpenRouter is slow.
-    AI_DECISION_TIMEOUT: int = 10
+    # Increased to 20s to handle slower OpenRouter responses, especially for free models.
+    # If OpenRouter is consistently slow, consider using faster models or paid tiers.
+    AI_DECISION_TIMEOUT: int = 20
     MARKET_DATA_TIMEOUT: int = 10
     WEBSOCKET_HEARTBEAT_INTERVAL: int = 30
     
     # Retry Configuration
     # For trading decisions we generally want to fail fast rather than stall
     # the entire backtest on repeated timeouts.
-    MAX_RETRIES: int = 1
-    RETRY_BASE_DELAY: float = 1.0
-    RETRY_MAX_DELAY: float = 5.0
+    MAX_RETRIES: int = 3
+    RETRY_BASE_DELAY: float = 2.0
+    RETRY_MAX_DELAY: float = 10.0
     
     # Circuit Breaker Configuration
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 5
     CIRCUIT_BREAKER_TIMEOUT: int = 60
+    
+    # API Rate Limiting
+    # OpenRouter rate limits (free tier): 20 requests/minute for free models
+    # To stay safely under the limit, we throttle to ~10-15 requests/minute
+    # Minimum delay between consecutive API requests (in seconds)
+    API_REQUEST_DELAY: float = 4.0  # 4 seconds = max 15 requests/minute (safe buffer)
+    MAX_CONCURRENT_API_REQUESTS: int = 1  # Sequential requests only for free tier
     
     # Database Connection Pool
     DB_POOL_SIZE: int = 20

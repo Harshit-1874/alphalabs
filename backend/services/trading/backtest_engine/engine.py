@@ -136,9 +136,16 @@ class BacktestEngine:
         start_date_str = start_dt.date()
         end_date_str = end_dt.date()
         
+        # Extract agent_id first (primary key access is safe, but avoid accessing other attributes)
+        # The agent object may be expired in background tasks, so we reload it below
+        try:
+            agent_id = agent.id
+        except Exception:
+            raise ValidationError("Agent ID could not be determined from agent object")
+        
         logger.info(
             f"Starting backtest: session_id={session_id}, "
-            f"agent={agent.name}, asset={asset}, timeframe={timeframe}, "
+            f"agent_id={agent_id}, asset={asset}, timeframe={timeframe}, "
             f"start={start_date_str}, end={end_date_str}"
         )
         
@@ -148,7 +155,6 @@ class BacktestEngine:
                 # Reload agent with api_key relationship to avoid lazy loading issues
                 # This ensures we have fresh data in the proper async context
                 # IMPORTANT: Expire any existing agent object to force fresh load from DB
-                agent_id = agent.id
                 
                 # Expire the agent object if it's in this session to force fresh load
                 if agent in db.identity_map.values():
@@ -259,6 +265,9 @@ class BacktestEngine:
                 strategy_prompt=agent.strategy_prompt,
                 mode=agent.mode
             )
+            
+            # Eagerly initialize model metadata to avoid fetching during trading decisions
+            await ai_trader.initialize()
             
             # Compute when it's safe to start asking the LLM for decisions.
             # Use dynamic indicator readiness check (user-configured percentage of indicators ready)
@@ -490,17 +499,19 @@ class BacktestEngine:
                         )
                         
                         # Broadcast EVERY candle during fast-forward for smooth visual progression
-                        # This allows the chart to animate smoothly step-by-step, just very fast
-                        # We still skip LLM calls (that's the optimization), but show visual progress
+                        # Skip indicator calculation during fast-forward for maximum speed
+                        # (indicators are pre-calculated but lookup still has overhead)
+                        # Use empty dict - frontend doesn't need indicators for non-decision candles
+                        empty_indicators = {}
                         await self.broadcaster.broadcast_candle(
                             session_id, candle, 
-                            session_state.indicator_calculator.calculate_all(candle_index),
+                            empty_indicators,  # Skip indicator lookup for speed
                             candle_index
                         )
                         
-                        # Batch database updates during fast-forward (every 10 candles) for performance
-                        # This reduces database I/O while still keeping data reasonably fresh
-                        if candle_index % 10 == 0:
+                        # Batch database updates during fast-forward (every 20 candles) for maximum performance
+                        # This reduces database I/O significantly while still keeping data reasonably fresh
+                        if candle_index % 20 == 0:
                             await self.database_manager.update_session_runtime_stats(
                                 db=db,
                                 session_id=session_id,
@@ -515,17 +526,9 @@ class BacktestEngine:
                             )
                             await self.broadcaster.broadcast_stats_update(session_id, stats)
                         
-                        # Fast-forward: Minimal delay for maximum speed
-                        # We broadcast every candle so the chart animates smoothly
-                        # The delay is minimal to allow the browser to keep up with updates
-                        # For instant mode, we skip delay entirely
-                        if session_state.playback_speed == "instant":
-                            # No delay in instant mode - go as fast as possible
-                            pass
-                        else:
-                            # Very minimal delay (0.5ms) just to yield to event loop
-                            # This allows browser to render updates while still being extremely fast
-                            await asyncio.sleep(0.0005)  # 0.5ms per candle = ~2000 candles/second theoretical
+                        # NO DELAY during fast-forward - go as fast as possible!
+                        # The chart will update as fast as WebSocket can handle it
+                        # Browser will naturally throttle if it can't keep up
                     
                     # Move to next candle
                     session_state.current_index += 1
@@ -646,9 +649,147 @@ class BacktestEngine:
             ValidationError: If session not found
         """
         session_state = self.active_sessions.get(session_id)
-        if not session_state:
-            raise ValidationError(f"Session not found: {session_id}")
         
+        # If not in active sessions, check database to see if it exists
+        # (might have completed or been cleaned up from memory)
+        if not session_state:
+            async with self.session_factory() as db:
+                from sqlalchemy import select
+                from models.arena import TestSession
+                result = await db.execute(
+                    select(TestSession).where(TestSession.id == session_id)
+                )
+                db_session = result.scalar_one_or_none()
+                
+                if not db_session:
+                    raise ValidationError(f"Session not found: {session_id}")
+                
+                # If session is already completed, return its result_id if available
+                if db_session.status == "completed":
+                    from models.result import TestResult
+                    result_query = await db.execute(
+                        select(TestResult).where(TestResult.session_id == session_id)
+                        .order_by(TestResult.created_at.desc())
+                        .limit(1)
+                    )
+                    test_result = result_query.scalar_one_or_none()
+                    if test_result:
+                        logger.info(
+                            f"Session {session_id} already completed, returning existing result_id: {test_result.id}"
+                        )
+                        return str(test_result.id)
+                    else:
+                        raise ValidationError(
+                            f"Session {session_id} is already completed but no result found. "
+                            f"Please check the results page."
+                        )
+                
+                # If session exists in DB but not in memory, it might have errored or been cleaned up
+                # Try to generate result from database state (similar to cleanup endpoint behavior)
+                logger.warning(
+                    f"Session {session_id} not in active_sessions but exists in database "
+                    f"with status {db_session.status}. Attempting to generate result from DB state."
+                )
+                
+                # Check if result already exists
+                from models.result import TestResult
+                from models.arena import Trade
+                result_query = await db.execute(
+                    select(TestResult).where(TestResult.session_id == session_id)
+                    .order_by(TestResult.created_at.desc())
+                    .limit(1)
+                )
+                existing_result = result_query.scalar_one_or_none()
+                if existing_result:
+                    logger.info(
+                        f"Session {session_id} already has result, marking as completed: {existing_result.id}"
+                    )
+                    # Mark session as completed
+                    await self.database_manager.update_session_status(db, session_id, "completed")
+                    await self.database_manager.update_session_completed_at(
+                        db, session_id, datetime.now(timezone.utc)
+                    )
+                    await db.commit()
+                    return str(existing_result.id)
+                
+                # Calculate stats from database trades
+                trades_result = await db.execute(
+                    select(Trade).where(Trade.session_id == session_id).order_by(Trade.trade_number)
+                )
+                trades = trades_result.scalars().all()
+                
+                # Calculate stats from trades (similar to PositionManager.get_stats())
+                total_trades = len(trades)
+                if total_trades == 0:
+                    stats = {
+                        "total_trades": 0,
+                        "winning_trades": 0,
+                        "losing_trades": 0,
+                        "win_rate": 0.0,
+                        "total_pnl": 0.0,
+                        "total_pnl_pct": 0.0,
+                        "current_equity": float(db_session.current_equity or db_session.starting_capital),
+                        "equity_change_pct": float(db_session.current_pnl_pct or 0.0)
+                    }
+                else:
+                    winning_trades = [t for t in trades if t.pnl_amount and t.pnl_amount > 0]
+                    losing_trades = [t for t in trades if t.pnl_amount and (t.pnl_amount <= 0)]
+                    total_pnl = sum(float(t.pnl_amount or 0) for t in trades)
+                    total_pnl_pct = (total_pnl / float(db_session.starting_capital)) * 100 if db_session.starting_capital else 0.0
+                    win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0.0
+                    
+                    stats = {
+                        "total_trades": total_trades,
+                        "winning_trades": len(winning_trades),
+                        "losing_trades": len(losing_trades),
+                        "win_rate": win_rate,
+                        "total_pnl": total_pnl,
+                        "total_pnl_pct": total_pnl_pct,
+                        "current_equity": float(db_session.current_equity or db_session.starting_capital),
+                        "equity_change_pct": float(db_session.current_pnl_pct or 0.0)
+                    }
+                
+                # Mark session as completed
+                await self.database_manager.update_session_status(db, session_id, "completed")
+                await self.database_manager.update_session_completed_at(
+                    db, session_id, datetime.now(timezone.utc)
+                )
+                
+                # Generate result from database state
+                result_service = ResultService(db)
+                result_id = await result_service.create_from_session(
+                    session_id=session_id,
+                    stats=stats,
+                    equity_curve=None,  # Can't reconstruct equity curve from DB
+                    forced_stop=True
+                )
+                
+                # Broadcast session completed event
+                await self.broadcaster.broadcast_session_completed(
+                    session_id=session_id,
+                    result_id=str(result_id),
+                    final_equity=stats["current_equity"],
+                    total_pnl=stats["total_pnl"],
+                    total_pnl_pct=stats["total_pnl_pct"],
+                    total_trades=stats["total_trades"],
+                    win_rate=stats["win_rate"],
+                    forced_stop=True
+                )
+                
+                logger.info(
+                    f"Backtest stopped from DB state: session_id={session_id}, result_id={result_id}"
+                )
+                
+                # Defensively remove from active_sessions if it exists (shouldn't happen, but cleanup just in case)
+                if session_id in self.active_sessions:
+                    logger.warning(
+                        f"Session {session_id} was in active_sessions but handled from DB state. Removing from memory."
+                    )
+                    del self.active_sessions[session_id]
+                
+                return result_id
+        
+        # Session is in memory - use normal stop flow
         logger.info(
             f"Stopping backtest: session_id={session_id}, "
             f"close_position={close_position}"

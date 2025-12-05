@@ -678,38 +678,129 @@ async def start_backtest(
     """Start a new backtest session."""
     # Check for existing active backtests
     # Check both in-memory sessions and database
-    active_in_memory = any(
-        state.agent.user_id == current_user.id
-        for state in engine.active_sessions.values()
-    )
+    in_memory_sessions = [
+        (session_id, state) 
+        for session_id, state in engine.active_sessions.items()
+        if state.agent.user_id == current_user.id
+    ]
+    active_in_memory = len(in_memory_sessions) > 0
     
-    # First, clean up stale "initializing" sessions (stuck for more than 10 minutes)
-    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=10)
-    stale_sessions_result = await db.execute(
+    if active_in_memory:
+        logger.info(f"Found {len(in_memory_sessions)} active backtest sessions in memory for user {current_user.id}")
+        for session_id, state in in_memory_sessions:
+            logger.info(f"In-memory session {session_id}: agent={state.agent.name}, paused={state.is_paused}")
+    
+    # First, clean up stale "initializing" sessions (stuck for more than 5 minutes)
+    # If a session is "initializing" but not in-memory, it's likely stuck
+    stale_init_threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
+    stale_init_sessions_result = await db.execute(
         select(TestSession)
         .where(TestSession.user_id == current_user.id)
         .where(TestSession.type == "backtest")
         .where(TestSession.status == "initializing")
-        .where(TestSession.created_at < stale_threshold)
+        .where(TestSession.created_at < stale_init_threshold)
     )
-    stale_sessions = stale_sessions_result.scalars().all()
+    stale_init_sessions = stale_init_sessions_result.scalars().all()
     
-    if stale_sessions:
-        logger.info(f"Cleaning up {len(stale_sessions)} stale backtest sessions for user {current_user.id}")
-        for stale_session in stale_sessions:
+    # Also check for "initializing" sessions that aren't in-memory (definitely stuck)
+    in_memory_session_ids = {UUID(sid) for sid in engine.active_sessions.keys()}
+    stuck_init_sessions = [
+        s for s in stale_init_sessions 
+        if s.id not in in_memory_session_ids
+    ]
+    
+    if stuck_init_sessions:
+        logger.info(f"Cleaning up {len(stuck_init_sessions)} stuck initializing backtest sessions (not in-memory) for user {current_user.id}")
+        for stale_session in stuck_init_sessions:
             await db.execute(
                 delete(TestSession).where(TestSession.id == stale_session.id)
             )
         await db.commit()
     
-    # Now check for truly active sessions (running, paused, or recent initializing)
-    active_in_db_result = await db.execute(
+    # Now check for active sessions (running, paused, or recent initializing)
+    # We need to filter out stale sessions (running > 2 hours with 0 trades)
+    STALE_THRESHOLD_HOURS = 2
+    now = datetime.now(timezone.utc)
+    
+    active_sessions_result = await db.execute(
         select(TestSession)
         .where(TestSession.user_id == current_user.id)
         .where(TestSession.type == "backtest")
         .where(TestSession.status.in_(("running", "paused", "initializing")))
     )
-    active_in_db = active_in_db_result.first() is not None
+    active_sessions = active_sessions_result.scalars().all()
+    
+    logger.info(f"Found {len(active_sessions)} active backtest sessions in DB for user {current_user.id}")
+    
+    # Get trade stats for all active sessions to check if they're stale
+    if active_sessions:
+        session_ids = [s.id for s in active_sessions]
+        trade_stats = await _get_trade_stats(db, session_ids)
+        
+        # Filter out stale sessions and clean them up
+        stale_sessions_to_clean = []
+        non_stale_sessions = []
+        
+        for session in active_sessions:
+            trades_count, _ = trade_stats.get(session.id, (0, 0.0))
+            
+            # Calculate duration
+            duration_seconds = session.elapsed_seconds or 0
+            if not duration_seconds and session.started_at:
+                duration_seconds = int((now - session.started_at).total_seconds())
+            elif not duration_seconds and session.created_at:
+                duration_seconds = int((now - session.created_at).total_seconds())
+            
+            duration_hours = duration_seconds / 3600
+            
+            # Mark as stale if: running/paused > 2 hours with 0 trades, or initializing > 5 minutes
+            # Also mark as stale if running but stuck (no progress for > 30 minutes)
+            # If initializing and not in-memory, it's definitely stuck
+            is_stale = False
+            if session.status == "initializing":
+                # Initializing sessions are stale if:
+                # 1. > 5 minutes old, OR
+                # 2. Not in-memory (definitely stuck)
+                is_stale = duration_seconds > 300 or session.id not in in_memory_session_ids  # 5 minutes
+            elif session.status == "running":
+                # Running sessions are stale if:
+                # 1. > 2 hours with 0 trades, OR
+                # 2. Stuck (current_candle is 0 or None and running > 30 minutes)
+                current_candle = session.current_candle or 0
+                is_stuck = current_candle == 0 and duration_seconds > 1800  # 30 minutes
+                is_stale = (trades_count == 0 and duration_hours > STALE_THRESHOLD_HOURS) or is_stuck
+            else:  # paused
+                # Paused sessions are stale if > 2 hours with 0 trades
+                is_stale = trades_count == 0 and duration_hours > STALE_THRESHOLD_HOURS
+            
+            logger.info(
+                f"Session {session.id}: status={session.status}, "
+                f"trades={trades_count}, duration={duration_hours:.2f}h, "
+                f"current_candle={session.current_candle}, is_stale={is_stale}"
+            )
+            
+            if is_stale:
+                stale_sessions_to_clean.append(session)
+            else:
+                non_stale_sessions.append(session)
+        
+        # Clean up stale sessions
+        if stale_sessions_to_clean:
+            logger.info(f"Cleaning up {len(stale_sessions_to_clean)} stale backtest sessions for user {current_user.id}")
+            for stale_session in stale_sessions_to_clean:
+                await db.execute(
+                    delete(TestSession).where(TestSession.id == stale_session.id)
+                )
+            await db.commit()
+        
+        # Only consider non-stale sessions as active
+        active_in_db = len(non_stale_sessions) > 0
+        logger.info(f"After cleanup: {len(non_stale_sessions)} non-stale sessions, active_in_db={active_in_db}")
+    else:
+        active_in_db = False
+        logger.info("No active sessions found in DB")
+    
+    logger.info(f"Final check: active_in_memory={active_in_memory}, active_in_db={active_in_db}")
     
     if active_in_memory or active_in_db:
         raise HTTPException(
@@ -727,6 +818,10 @@ async def start_backtest(
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Extract agent values before any commits to avoid lazy loading issues
+    agent_id = agent.id
+    agent_name = agent.name
 
     # Create session record
     session_id = uuid.uuid4()
@@ -764,7 +859,7 @@ async def start_backtest(
     test_session = TestSession(
         id=session_id,
         user_id=current_user.id,
-        agent_id=agent.id,
+        agent_id=agent_id,
         type="backtest",
         status="initializing",
         asset=request.asset,
@@ -790,7 +885,7 @@ async def start_backtest(
             user_id=current_user.id,
             type="test_started",
             title=f"Backtest started • {request.asset.upper()}",
-            message=f"{agent.name} is testing {request.asset.upper()} on {request.timeframe}",
+            message=f"{agent_name} is testing {request.asset.upper()} on {request.timeframe}",
             session_id=session_id,
         )
     except Exception as exc:
@@ -848,8 +943,8 @@ async def start_backtest(
         "session": BacktestSessionResponse(
             id=session_id,
             status="initializing",
-            agent_id=agent.id,
-            agent_name=agent.name,
+            agent_id=agent_id,
+            agent_name=agent_name,
             asset=request.asset,
             timeframe=request.timeframe,
             total_candles=0,
@@ -1058,33 +1153,104 @@ async def start_forward_test(
         for state in engine.active_sessions.values()
     )
     
-    # First, clean up stale "initializing" sessions (stuck for more than 10 minutes)
-    stale_threshold = datetime.now(timezone.utc) - timedelta(minutes=10)
-    stale_sessions_result = await db.execute(
+    # First, clean up stale "initializing" sessions (stuck for more than 5 minutes)
+    # If a session is "initializing" but not in-memory, it's likely stuck
+    stale_init_threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
+    stale_init_sessions_result = await db.execute(
         select(TestSession)
         .where(TestSession.user_id == current_user.id)
         .where(TestSession.type == "forward")
         .where(TestSession.status == "initializing")
-        .where(TestSession.created_at < stale_threshold)
+        .where(TestSession.created_at < stale_init_threshold)
     )
-    stale_sessions = stale_sessions_result.scalars().all()
+    stale_init_sessions = stale_init_sessions_result.scalars().all()
     
-    if stale_sessions:
-        logger.info(f"Cleaning up {len(stale_sessions)} stale forward test sessions for user {current_user.id}")
-        for stale_session in stale_sessions:
+    # Also check for "initializing" sessions that aren't in-memory (definitely stuck)
+    in_memory_session_ids = {UUID(sid) for sid in engine.active_sessions.keys()}
+    stuck_init_sessions = [
+        s for s in stale_init_sessions 
+        if s.id not in in_memory_session_ids
+    ]
+    
+    if stuck_init_sessions:
+        logger.info(f"Cleaning up {len(stuck_init_sessions)} stuck initializing forward test sessions (not in-memory) for user {current_user.id}")
+        for stale_session in stuck_init_sessions:
             await db.execute(
                 delete(TestSession).where(TestSession.id == stale_session.id)
             )
         await db.commit()
     
-    # Now check for truly active sessions (running, paused, or recent initializing)
-    active_in_db_result = await db.execute(
+    # Now check for active sessions (running, paused, or recent initializing)
+    # We need to filter out stale sessions (running > 2 hours with 0 trades)
+    STALE_THRESHOLD_HOURS = 2
+    now = datetime.now(timezone.utc)
+    
+    active_sessions_result = await db.execute(
         select(TestSession)
         .where(TestSession.user_id == current_user.id)
         .where(TestSession.type == "forward")
         .where(TestSession.status.in_(("running", "paused", "initializing")))
     )
-    active_in_db = active_in_db_result.first() is not None
+    active_sessions = active_sessions_result.scalars().all()
+    
+    # Get trade stats for all active sessions to check if they're stale
+    if active_sessions:
+        session_ids = [s.id for s in active_sessions]
+        trade_stats = await _get_trade_stats(db, session_ids)
+        
+        # Filter out stale sessions and clean them up
+        stale_sessions_to_clean = []
+        non_stale_sessions = []
+        
+        for session in active_sessions:
+            trades_count, _ = trade_stats.get(session.id, (0, 0.0))
+            
+            # Calculate duration
+            duration_seconds = session.elapsed_seconds or 0
+            if not duration_seconds and session.started_at:
+                duration_seconds = int((now - session.started_at).total_seconds())
+            elif not duration_seconds and session.created_at:
+                duration_seconds = int((now - session.created_at).total_seconds())
+            
+            duration_hours = duration_seconds / 3600
+            
+            # Mark as stale if: running/paused > 2 hours with 0 trades, or initializing > 5 minutes
+            # If initializing and not in-memory, it's definitely stuck
+            is_stale = False
+            if session.status == "initializing":
+                # Initializing sessions are stale if:
+                # 1. > 5 minutes old, OR
+                # 2. Not in-memory (definitely stuck)
+                is_stale = duration_seconds > 300 or session.id not in in_memory_session_ids  # 5 minutes
+            elif session.status == "running":
+                # Running sessions are stale if:
+                # 1. > 2 hours with 0 trades, OR
+                # 2. Stuck (current_candle is 0 or None and running > 30 minutes)
+                current_candle = session.current_candle or 0
+                is_stuck = current_candle == 0 and duration_seconds > 1800  # 30 minutes
+                is_stale = (trades_count == 0 and duration_hours > STALE_THRESHOLD_HOURS) or is_stuck
+            else:  # paused
+                # Paused sessions are stale if > 2 hours with 0 trades
+                is_stale = trades_count == 0 and duration_hours > STALE_THRESHOLD_HOURS
+            
+            if is_stale:
+                stale_sessions_to_clean.append(session)
+            else:
+                non_stale_sessions.append(session)
+        
+        # Clean up stale sessions
+        if stale_sessions_to_clean:
+            logger.info(f"Cleaning up {len(stale_sessions_to_clean)} stale forward test sessions for user {current_user.id}")
+            for stale_session in stale_sessions_to_clean:
+                await db.execute(
+                    delete(TestSession).where(TestSession.id == stale_session.id)
+                )
+            await db.commit()
+        
+        # Only consider non-stale sessions as active
+        active_in_db = len(non_stale_sessions) > 0
+    else:
+        active_in_db = False
     
     if active_in_memory or active_in_db:
         raise HTTPException(

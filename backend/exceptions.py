@@ -242,12 +242,33 @@ class RateLimitError(AlphaLabException):
     """Raised when rate limit is exceeded."""
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     
-    def __init__(self, resource: str, limit: int, window: str):
+    def __init__(self, resource: str, limit: int = None, window: str = None, reset_at: int = None):
+        """
+        Initialize rate limit error.
+        
+        Args:
+            resource: Resource that was rate limited
+            limit: Rate limit value
+            window: Time window for the limit
+            reset_at: Unix timestamp (milliseconds) when rate limit resets
+        """
+        message = f"Rate limit exceeded for {resource}"
+        if reset_at:
+            import datetime
+            reset_time = datetime.datetime.fromtimestamp(reset_at / 1000)
+            message += f". Resets at {reset_time.isoformat()}"
+        
         super().__init__(
-            message=f"Rate limit exceeded for {resource}",
+            message=message,
             code="RATE_LIMIT_EXCEEDED",
-            details={"resource": resource, "limit": limit, "window": window}
+            details={
+                "resource": resource,
+                "limit": limit,
+                "window": window,
+                "reset_at": reset_at
+            }
         )
+        self.reset_at = reset_at  # Store for easy access
 
 
 # Timeout Exceptions (504)

@@ -92,6 +92,10 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<string | null>(null);
+  
+  // Track reconnection loading state
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [hasReceivedData, setHasReceivedData] = useState(false);
 
   // Get config values with fallbacks
   const initialCapital = backtestConfig?.capital ?? 10000;
@@ -137,7 +141,10 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
 
   const totalCandles = sessionStatus?.total_candles || 0;
   const currentCandle = sessionStatus?.current_candle || 0;
-  const progress = totalCandles > 0 ? (currentCandle / totalCandles) * 100 : 0;
+  // Calculate progress, using candles.length as fallback if sessionStatus is not available yet
+  const progress = totalCandles > 0 
+    ? (currentCandle / totalCandles) * 100 
+    : 0;
   const winRate = sessionStatus?.win_rate || (trades.length > 0
     ? Math.round((trades.filter((t) => t.pnl > 0).length / trades.length) * 100)
     : 0);
@@ -306,6 +313,45 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     sessionId,
     handleWebSocketEvent
   );
+  
+  // Detect reconnection state - on mount, if we have no data yet, show reconnecting state
+  useEffect(() => {
+    if (candles.length === 0 && !hasReceivedData) {
+      setIsReconnecting(true);
+    }
+  }, [candles.length, hasReceivedData]);
+  
+  // Detect when data has been received
+  useEffect(() => {
+    // Data is loaded when we have:
+    // 1. WebSocket connected
+    // 2. Candles received
+    // 3. SessionStatus with valid total_candles (not 0)
+    const hasData = isConnected && 
+                    candles.length > 0 && 
+                    sessionStatus !== null && 
+                    sessionStatus.total_candles > 0;
+    
+    if (hasData && (isReconnecting || !hasReceivedData)) {
+      setIsReconnecting(false);
+      setHasReceivedData(true);
+    }
+  }, [candles.length, isConnected, sessionStatus, isReconnecting, hasReceivedData]);
+  
+  // Timeout fallback - if connected but no data after 10 seconds, stop reconnecting
+  useEffect(() => {
+    if (!isReconnecting || !isConnected) return;
+    
+    const timeout = setTimeout(() => {
+      if (isReconnecting && isConnected) {
+        console.log("Data load timeout - showing interface anyway");
+        setIsReconnecting(false);
+        setHasReceivedData(true);
+      }
+    }, 10000); // 10 second timeout
+    
+    return () => clearTimeout(timeout);
+  }, [isReconnecting, isConnected]);
 
   // Memoize previous status to avoid unnecessary updates
   const previousStatusRef = useRef<typeof sessionStatus>(null);
@@ -645,8 +691,64 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
 
   // Show skeleton loading state - don't block UI completely
   // WebSocket will start connecting immediately and data will flow in
-  if (isLoading && !sessionStatus && candles.length === 0) {
-    return <BattleScreenSkeleton />;
+  // Also show when reconnecting after a refresh
+  if ((isLoading && !sessionStatus && candles.length === 0) || isReconnecting) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-120px)] gap-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="relative">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="w-16 h-16 border-4 border-border rounded-full border-t-[hsl(var(--brand-flame))]"
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Activity className="h-6 w-6 text-[hsl(var(--brand-flame))] animate-pulse" />
+            </div>
+          </div>
+          
+          <div className="text-center space-y-2">
+            <h3 className="text-lg font-semibold">
+              {hasReceivedData ? "Reconnecting to your session" : "Connecting to your session"}
+            </h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              {!isConnected 
+                ? "Establishing WebSocket connection..." 
+                : hasReceivedData 
+                  ? "Loading latest data..." 
+                  : "Loading session data..."}
+            </p>
+            {candles.length > 0 && (
+              <div className="flex flex-col items-center gap-1 mt-2">
+                <p className="text-xs text-muted-foreground">
+                  Received {candles.length} candles...
+                </p>
+                {sessionStatus && sessionStatus.total_candles > 0 && sessionStatus.current_candle > 0 && (
+                  <p className="text-xs font-mono text-muted-foreground">
+                    Progress: {sessionStatus.current_candle}/{sessionStatus.total_candles} ({Math.round((sessionStatus.current_candle / sessionStatus.total_candles) * 100)}%)
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </motion.div>
+        
+        {/* Skeleton cards preview */}
+        <div className="w-full max-w-4xl px-4 space-y-3 opacity-50">
+          <div className="h-12 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="h-24 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+            <div className="h-24 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+            <div className="h-24 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+          </div>
+          <div className="h-[300px] bg-card/50 border border-border/50 rounded-lg animate-pulse" />
+        </div>
+      </div>
+    );
   }
 
   // Treat API errors as fatal, but WebSocket errors are transient because
@@ -873,9 +975,11 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         <Progress value={progress} className="h-1 sm:h-1.5 flex-1" />
         <div className="flex items-center gap-2 text-[10px] sm:text-xs text-muted-foreground">
           <span>{progress.toFixed(0)}%</span>
-          <span className="hidden sm:inline">
-            ({currentCandle}/{totalCandles})
-          </span>
+          {totalCandles > 0 && (
+            <span className="hidden sm:inline">
+              ({currentCandle}/{totalCandles})
+            </span>
+          )}
         </div>
       </div>
 

@@ -1,0 +1,10 @@
+{
+  "model": "amazon/nova-2-lite-v1:free",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello! Can you tell me a short joke?"
+    }
+  ]
+}
+

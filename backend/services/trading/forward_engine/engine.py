@@ -205,9 +205,16 @@ class ForwardEngine:
             ValidationError: If parameters are invalid
             Exception: If initialization fails
         """
+        # Extract agent_id first (primary key access is safe, but avoid accessing other attributes)
+        # The agent object may be expired in background tasks, so we reload it below
+        try:
+            agent_id = agent.id
+        except Exception:
+            raise ValidationError("Agent ID could not be determined from agent object")
+        
         logger.info(
             f"Starting forward test: session_id={session_id}, "
-            f"agent={agent.name}, asset={asset}, timeframe={timeframe}"
+            f"agent_id={agent_id}, asset={asset}, timeframe={timeframe}"
         )
         
         try:
@@ -215,7 +222,6 @@ class ForwardEngine:
             async with self.session_factory() as db:
                 # Reload agent with api_key relationship to avoid lazy loading issues
                 # This ensures we have fresh data in the proper async context
-                agent_id = agent.id
                 agent_result = await db.execute(
                     select(Agent)
                     .options(selectinload(Agent.api_key))
@@ -252,6 +258,9 @@ class ForwardEngine:
                     strategy_prompt=agent.strategy_prompt,
                     mode=agent.mode
                 )
+                
+                # Eagerly initialize model metadata to avoid fetching during trading decisions
+                await ai_trader.initialize()
                 
                 # Create session state
                 session_state = SessionState(
@@ -370,9 +379,9 @@ class ForwardEngine:
             async with self.session_factory() as db:
                 market_data_service = MarketDataService(db)
                 
-                # Fetch historical candles from CoinGecko to show chart context
+                # Fetch historical candles to show chart context
                 # AND initialize indicator calculator with historical data
-                # This gives users a full chart view with past data AND warms up indicators
+                # Use the same method as backtest for consistency
                 historical_candles = []
                 try:
                     logger.info(f"Fetching historical data for {session_state.asset} {session_state.timeframe}")
@@ -388,10 +397,36 @@ class ForwardEngine:
                         f"{session_state.timeframe} (based on {len(session_state.agent.indicators or [])} enabled indicators)"
                     )
                     
-                    historical_candles = await market_data_service.get_historical_candles_coingecko(
-                        session_state.asset,
-                        session_state.timeframe,
-                        limit=required_candles
+                    # Calculate start_date based on required candles
+                    # Use the SAME approach as backtest: get_historical_data with date range
+                    from datetime import timedelta
+                    end_date = datetime.now(timezone.utc)
+                    
+                    # Calculate how far back we need to go based on timeframe
+                    if session_state.timeframe == '15m':
+                        days_back = (required_candles * 15) // (24 * 60) + 1
+                    elif session_state.timeframe == '1h':
+                        days_back = (required_candles // 24) + 1
+                    elif session_state.timeframe == '4h':
+                        days_back = (required_candles // 6) + 1
+                    elif session_state.timeframe == '1d':
+                        days_back = required_candles
+                    else:
+                        days_back = 30  # Default
+                    
+                    start_date = end_date - timedelta(days=days_back)
+                    
+                    logger.info(
+                        f"Fetching historical data from {start_date.date()} to {end_date.date()} "
+                        f"({days_back} days) for {session_state.asset} {session_state.timeframe}"
+                    )
+                    
+                    # Use the SAME method as backtest (works reliably with yfinance)
+                    historical_candles = await market_data_service.get_historical_data(
+                        asset=session_state.asset,
+                        timeframe=session_state.timeframe,
+                        start_date=start_date,
+                        end_date=end_date
                     )
                     
                     if historical_candles and len(historical_candles) > 0:

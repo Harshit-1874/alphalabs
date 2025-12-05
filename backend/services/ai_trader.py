@@ -20,18 +20,25 @@ Usage:
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from openai import AsyncOpenAI
 
 from config import settings
-from exceptions import OpenRouterAPIError, TimeoutError as AlphaLabTimeoutError
+from exceptions import OpenRouterAPIError, TimeoutError as AlphaLabTimeoutError, CircuitBreakerOpenError, RateLimitError
 from utils.retry import retry_with_backoff, CircuitBreaker, with_timeout
 from services.trading.position_manager import Position
+from services.model_inspector import ModelInspector
 
 
 logger = logging.getLogger(__name__)
+
+
+# Global request throttling
+_last_request_time: float = 0
+_request_lock = asyncio.Lock()
 
 
 @dataclass
@@ -106,6 +113,9 @@ class AITrader:
         self.strategy_prompt = strategy_prompt
         self.mode = mode
         
+        # Initialize model inspector for metadata and validation
+        self.model_inspector = ModelInspector(api_key)
+        
         # Initialize AsyncOpenAI client with OpenRouter base URL
         self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -123,6 +133,10 @@ class AITrader:
             timeout=settings.CIRCUIT_BREAKER_TIMEOUT
         )
         
+        # Cache for model metadata (lazy-loaded on first use)
+        self._model_max_tokens: Optional[int] = None
+        self._model_supports_structured: Optional[bool] = None
+        
         logger.info(
             f"AI Trader initialized",
             extra={
@@ -131,6 +145,50 @@ class AITrader:
                 "strategy_length": len(strategy_prompt)
             }
         )
+    
+    async def initialize(self) -> None:
+        """
+        Eagerly initialize model metadata.
+        
+        This should be called after creating AITrader to pre-load model
+        information (max_tokens, structured outputs support) so it doesn't
+        happen during trading decisions.
+        """
+        if self._model_max_tokens is None or self._model_supports_structured is None:
+            logger.debug(f"Initializing model metadata for {self.model}")
+            # Eagerly load both values to avoid fetching during trading decisions
+            self._model_max_tokens = await self.model_inspector.get_optimal_max_tokens(
+                self.model,
+                default=2048,
+                min_tokens=512,
+                max_tokens=8192
+            )
+            self._model_supports_structured = await self.model_inspector.supports_structured_outputs(
+                self.model
+            )
+            logger.debug(
+                f"Model metadata initialized: max_tokens={self._model_max_tokens}, "
+                f"supports_structured={self._model_supports_structured}"
+            )
+    
+    async def _get_optimal_max_tokens(self) -> int:
+        """Get optimal max_tokens for the current model (lazy-loaded)"""
+        if self._model_max_tokens is None:
+            self._model_max_tokens = await self.model_inspector.get_optimal_max_tokens(
+                self.model,
+                default=2048,
+                min_tokens=512,
+                max_tokens=8192
+            )
+        return self._model_max_tokens
+    
+    async def _supports_structured_outputs(self) -> bool:
+        """Check if current model supports structured outputs (lazy-loaded)"""
+        if self._model_supports_structured is None:
+            self._model_supports_structured = await self.model_inspector.supports_structured_outputs(
+                self.model
+            )
+        return self._model_supports_structured
 
     async def get_decision(
         self,
@@ -180,17 +238,15 @@ class AITrader:
                     return await self.circuit_breaker.call(make_request)
                 
                 # Apply retry with exponential backoff.
-                # We deliberately keep retries very low and treat timeouts as
-                # non-retriable in order to avoid freezing long backtests
-                # when OpenRouter is slow or unavailable.
+                # Retry API errors and rate limits (rate limits handled with reset-time-aware backoff).
+                # We keep retries low (1-2) to avoid freezing backtests.
                 return await retry_with_backoff(
                     circuit_protected_request,
                     max_retries=settings.MAX_RETRIES,
                     base_delay=settings.RETRY_BASE_DELAY,
                     max_delay=settings.RETRY_MAX_DELAY,
-                    # Only retry on explicit API failures; timeouts will fall
-                    # through and be handled as a single HOLD decision.
-                    exceptions=(OpenRouterAPIError,),
+                    # Retry API errors and rate limits (rate limits handled specially in retry logic)
+                    exceptions=(OpenRouterAPIError, RateLimitError),
                     operation_name="ai_decision"
                 )
             
@@ -212,6 +268,20 @@ class AITrader:
             
             return decision
             
+        except CircuitBreakerOpenError as e:
+            # Circuit breaker is open - service is temporarily unavailable
+            # Log as warning (not error) since this is expected behavior when service is down
+            logger.warning(
+                f"AI decision skipped: {str(e)}",
+                extra={"error": str(e), "model": self.model}
+            )
+            # Return HOLD decision with brief reasoning
+            return AIDecision(
+                action="HOLD",
+                reasoning=f"AI service temporarily unavailable (circuit breaker open)",
+                size_percentage=0.0,
+                leverage=1
+            )
         except Exception as e:
             logger.error(
                 f"Error getting AI decision after retries: {str(e)}",
@@ -317,6 +387,9 @@ Rules:
         """
         Make API request to OpenRouter with timeout and retry.
         
+        Implements request throttling to prevent rate limit errors by ensuring
+        a minimum delay between consecutive API calls.
+        
         We intentionally use the non-streaming API with OpenRouter structured
         outputs so the model is constrained to emit JSON that matches our
         trading decision schema. This keeps parsing simple and avoids most
@@ -332,6 +405,20 @@ Rules:
             OpenRouterAPIError: If API call fails
             AlphaLabTimeoutError: If request times out
         """
+        # Throttle requests globally to respect rate limits
+        global _last_request_time, _request_lock
+        
+        async with _request_lock:
+            current_time = time.time()
+            time_since_last_request = current_time - _last_request_time
+            
+            if time_since_last_request < settings.API_REQUEST_DELAY:
+                wait_time = settings.API_REQUEST_DELAY - time_since_last_request
+                logger.debug(f"Throttling API request: waiting {wait_time:.2f}s")
+                await asyncio.sleep(wait_time)
+            
+            _last_request_time = time.time()
+        
         async def make_request():
             try:
                 # Build system message based on mode
@@ -342,74 +429,179 @@ Your Strategy:
 {self.strategy_prompt}
 
 You must analyze the market data and make trading decisions based on your strategy.
-Always respond with valid JSON in the exact format specified."""
+Always respond with valid JSON in the exact format specified. Your response must be a JSON object with these fields:
+- action: one of "LONG", "SHORT", "CLOSE", or "HOLD"
+- reasoning: explanation for your decision
+- size_percentage: number between 0.0 and 1.0 (fraction of capital to use)
+- leverage: integer between 1 and 5
+- entry_price: (optional) desired entry price
+- stop_loss_price: (optional) stop loss price
+- take_profit_price: (optional) take profit price"""
                 
-                # Make non-streaming request with structured outputs so we get
-                # a single JSON object that matches our schema.
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": system_message},
-                        {"role": "user", "content": user_message}
-                    ],
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "trading_decision",
-                            "strict": True,
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "action": {
-                                        "type": "string",
-                                        "description": "Trading action to take",
-                                        "enum": ["LONG", "SHORT", "CLOSE", "HOLD"],
-                                    },
-                                    "reasoning": {
-                                        "type": "string",
-                                        "description": "Explanation for the decision based on indicators and market context",
-                                    },
-                                    "entry_price": {
-                                        "type": "number",
-                                        "description": "Desired entry price. If omitted, enter at current close.",
-                                    },
-                                    "stop_loss_price": {
-                                        "type": "number",
-                                        "description": "Absolute stop loss price level. Optional; can be omitted.",
-                                    },
-                                    "take_profit_price": {
-                                        "type": "number",
-                                        "description": "Absolute take profit price level. Optional; can be omitted.",
-                                    },
-                                    "size_percentage": {
-                                        "type": "number",
-                                        "description": "Fraction of capital to use between 0.0 and 1.0",
-                                        "minimum": 0.0,
-                                        "maximum": 1.0,
-                                    },
-                                    "leverage": {
-                                        "type": "integer",
-                                        "description": "Leverage multiplier between 1 and 5",
-                                        "minimum": 1,
-                                        "maximum": 5,
+                # Get optimal max_tokens based on model's context length
+                optimal_max_tokens = await self._get_optimal_max_tokens()
+                
+                # Try with structured outputs first (if model supports it)
+                used_structured_outputs = False
+                supports_structured = await self._supports_structured_outputs()
+                
+                if supports_structured:
+                    try:
+                        response = await self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {"role": "system", "content": system_message},
+                                {"role": "user", "content": user_message}
+                            ],
+                            response_format={
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "trading_decision",
+                                    "strict": True,
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "action": {
+                                                "type": "string",
+                                                "description": "Trading action to take",
+                                                "enum": ["LONG", "SHORT", "CLOSE", "HOLD"],
+                                            },
+                                            "reasoning": {
+                                                "type": "string",
+                                                "description": "Explanation for the decision based on indicators and market context",
+                                            },
+                                            "entry_price": {
+                                                "type": "number",
+                                                "description": "Desired entry price. If omitted, enter at current close.",
+                                            },
+                                            "stop_loss_price": {
+                                                "type": "number",
+                                                "description": "Absolute stop loss price level. Optional; can be omitted.",
+                                            },
+                                            "take_profit_price": {
+                                                "type": "number",
+                                                "description": "Absolute take profit price level. Optional; can be omitted.",
+                                            },
+                                            "size_percentage": {
+                                                "type": "number",
+                                                "description": "Fraction of capital to use between 0.0 and 1.0",
+                                                "minimum": 0.0,
+                                                "maximum": 1.0,
+                                            },
+                                            "leverage": {
+                                                "type": "integer",
+                                                "description": "Leverage multiplier between 1 and 5",
+                                                "minimum": 1,
+                                                "maximum": 5,
+                                            },
+                                        },
+                                        "required": ["action", "reasoning", "size_percentage", "leverage"],
+                                        "additionalProperties": False,
                                     },
                                 },
-                                "required": ["action", "reasoning", "size_percentage", "leverage"],
-                                "additionalProperties": False,
                             },
-                        },
-                    },
-                    # Deterministic decisions for backtest/forward so runs are reproducible
-                    temperature=0,
-                    # Keep max_tokens small to stay well within OpenRouter credit limits
-                    # and avoid 402 errors like "requested 65535 tokens".
-                    max_tokens=512,
-                )
+                            temperature=0,
+                            max_tokens=optimal_max_tokens,
+                        )
+                        used_structured_outputs = True
+                    except Exception as structured_error:
+                        # If structured outputs fail, log and try fallback
+                        logger.warning(
+                            f"Structured outputs failed for model {self.model}, trying fallback: {str(structured_error)}"
+                        )
+                        # Fallback: request JSON mode without strict schema
+                        response = await self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {"role": "system", "content": system_message},
+                                {"role": "user", "content": user_message}
+                            ],
+                            response_format={"type": "json_object"},  # JSON mode (less strict)
+                            temperature=0,
+                            max_tokens=optimal_max_tokens,
+                        )
+                else:
+                    # Model doesn't support structured outputs, use JSON mode directly
+                    logger.debug(f"Model {self.model} doesn't support structured outputs, using JSON mode")
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_message},
+                            {"role": "user", "content": user_message}
+                        ],
+                        response_format={"type": "json_object"},  # JSON mode (less strict)
+                        temperature=0,
+                        max_tokens=optimal_max_tokens,
+                    )
 
                 # OpenAI / OpenRouter client returns the content on the first choice
-                content = response.choices[0].message.content
-                if content is None:
-                    raise OpenRouterAPIError("Empty response from API")
+                if not response.choices or len(response.choices) == 0:
+                    raise OpenRouterAPIError("No choices in API response")
+                
+                choice = response.choices[0]
+                if not hasattr(choice, 'message') or choice.message is None:
+                    raise OpenRouterAPIError("No message in API response choice")
+                
+                content = choice.message.content
+                
+                # Log the raw response for debugging
+                logger.debug(
+                    f"OpenRouter API response: model={response.model}, "
+                    f"choices_count={len(response.choices)}, "
+                    f"content_type={type(content)}, "
+                    f"content_length={len(str(content)) if content else 0}, "
+                    f"finish_reason={getattr(choice, 'finish_reason', 'unknown')}"
+                )
+                
+                if content is None or (isinstance(content, str) and not content.strip()):
+                    # Check finish_reason to understand why content is empty
+                    finish_reason = getattr(choice, 'finish_reason', None)
+                    
+                    # If we used structured outputs and got empty response, try fallback
+                    # Some models don't support json_schema structured outputs properly
+                    if used_structured_outputs:
+                        logger.warning(
+                            f"Empty response with structured outputs for model {self.model}, "
+                            f"trying fallback with json_object mode"
+                        )
+                        # Retry with json_object mode (less strict)
+                        # Use optimal max_tokens (already computed)
+                        response = await self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {"role": "system", "content": system_message},
+                                {"role": "user", "content": user_message}
+                            ],
+                            response_format={"type": "json_object"},
+                            temperature=0,
+                            max_tokens=optimal_max_tokens,
+                        )
+                        
+                        # Check the fallback response
+                        if not response.choices or len(response.choices) == 0:
+                            raise OpenRouterAPIError("No choices in fallback API response")
+                        
+                        choice = response.choices[0]
+                        content = choice.message.content if choice.message else None
+                        
+                        if content is None or (isinstance(content, str) and not content.strip()):
+                            finish_reason = getattr(choice, 'finish_reason', None)
+                            error_msg = f"Empty response from API even with fallback (finish_reason: {finish_reason})"
+                            if finish_reason == "length":
+                                error_msg += " - Response was truncated (increase max_tokens)"
+                            elif finish_reason == "content_filter":
+                                error_msg += " - Content was filtered by safety system"
+                            raise OpenRouterAPIError(error_msg)
+                    else:
+                        # Already tried fallback or didn't use structured outputs
+                        error_msg = f"Empty response from API (finish_reason: {finish_reason})"
+                        if finish_reason == "length":
+                            error_msg += " - Response was truncated (increase max_tokens)"
+                        elif finish_reason == "content_filter":
+                            error_msg += " - Content was filtered by safety system"
+                        elif finish_reason == "stop":
+                            error_msg += " - Model stopped early (may indicate an issue)"
+                        raise OpenRouterAPIError(error_msg)
 
                 # In most cases this will already be a JSON string; if not, we
                 # serialize whatever object we got so that _parse_response can
@@ -420,11 +612,50 @@ Always respond with valid JSON in the exact format specified."""
                     full_response = json.dumps(content)
 
                 if not full_response:
-                    raise OpenRouterAPIError("Empty response from API")
+                    raise OpenRouterAPIError("Empty response from API (content was empty string)")
 
                 return full_response
                 
             except Exception as e:
+                # Check if this is a rate limit error (429)
+                error_str = str(e).lower()
+                if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+                    # Try to extract rate limit info from the error
+                    reset_at = None
+                    try:
+                        # The error might contain headers with rate limit info
+                        # Look for various formats:
+                        # - X-RateLimit-Reset: timestamp in seconds or milliseconds
+                        # - Retry-After: seconds to wait
+                        import re
+                        
+                        # Try to find X-RateLimit-Reset header (milliseconds or seconds)
+                        reset_match = re.search(r"[Xx]-[Rr]ate[Ll]imit-[Rr]eset['\"]?\s*:\s*['\"]?(\d+)", str(e))
+                        if reset_match:
+                            reset_value = int(reset_match.group(1))
+                            # If value is in seconds (< year 2100 in Unix seconds)
+                            if reset_value < 5_000_000_000:
+                                reset_at = reset_value * 1000  # Convert to milliseconds
+                            else:
+                                reset_at = reset_value  # Already in milliseconds
+                        
+                        # Try to find Retry-After header (seconds to wait)
+                        retry_after_match = re.search(r"[Rr]etry-[Aa]fter['\"]?\s*:\s*['\"]?(\d+)", str(e))
+                        if retry_after_match and not reset_at:
+                            retry_after = int(retry_after_match.group(1))
+                            # Calculate reset time (current time + retry_after)
+                            reset_at = int((time.time() + retry_after) * 1000)
+                        
+                        if reset_at:
+                            logger.debug(f"Extracted rate limit reset time: {reset_at}ms")
+                    except Exception as parse_error:
+                        logger.debug(f"Could not parse rate limit headers: {parse_error}")
+                    
+                    raise RateLimitError(
+                        resource="openrouter",
+                        reset_at=reset_at
+                    )
+                
                 logger.error(
                     f"OpenRouter API request failed: {str(e)}",
                     extra={"error": str(e), "model": self.model}

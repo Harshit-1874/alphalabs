@@ -15,7 +15,7 @@ from typing import Callable, Any, Optional, Type, Tuple
 from functools import wraps
 
 from config import settings
-from exceptions import CircuitBreakerOpenError, TimeoutError as AlphaLabTimeoutError
+from exceptions import CircuitBreakerOpenError, TimeoutError as AlphaLabTimeoutError, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,50 @@ async def retry_with_backoff(
     for attempt in range(max_retries):
         try:
             return await func()
+        except RateLimitError as e:
+            # Handle rate limits specially - wait until reset time
+            import time
+            if e.reset_at:
+                reset_time = e.reset_at / 1000  # Convert from milliseconds to seconds
+                current_time = time.time()
+                wait_seconds = max(0, reset_time - current_time) + 1  # Add 1 second buffer
+                
+                if wait_seconds > 3600:  # Don't wait more than 1 hour
+                    logger.error(
+                        f"Rate limit reset is more than 1 hour away, giving up",
+                        extra={"operation": operation_name, "reset_at": e.reset_at}
+                    )
+                    raise
+                
+                logger.warning(
+                    f"Rate limit exceeded for '{operation_name}', waiting {wait_seconds:.1f}s until reset",
+                    extra={
+                        "operation": operation_name,
+                        "wait_seconds": wait_seconds,
+                        "reset_at": e.reset_at
+                    }
+                )
+                await asyncio.sleep(min(wait_seconds, 300))  # Cap wait at 5 minutes
+            else:
+                # No reset time, use exponential backoff
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                logger.warning(
+                    f"Rate limit exceeded for '{operation_name}' (attempt {attempt + 1}/{max_retries}), "
+                    f"retrying in {delay:.2f}s",
+                    extra={
+                        "operation": operation_name,
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "delay": delay
+                    }
+                )
+                await asyncio.sleep(delay)
+            
+            # Continue to next attempt
+            last_exception = e
+            if attempt == max_retries - 1:
+                raise
+                
         except exceptions as e:
             last_exception = e
             
@@ -183,14 +227,19 @@ class CircuitBreaker:
         if self.state == "open":
             if self.last_failure_time and time.time() - self.last_failure_time > self.timeout:
                 logger.info(
-                    f"Circuit breaker for '{self.service_name}' transitioning to half-open",
+                    f"Circuit breaker for '{self.service_name}' transitioning to half-open (testing recovery)",
                     extra={"service": self.service_name}
                 )
                 self.state = "half_open"
+                # Reset failure count when entering half-open to allow a clean test
+                # A single success will close it, a single failure will open it again
+                self.failure_count = 0
             else:
+                remaining_time = self.timeout - (time.time() - (self.last_failure_time or 0))
                 logger.warning(
-                    f"Circuit breaker for '{self.service_name}' is open, rejecting request",
-                    extra={"service": self.service_name}
+                    f"Circuit breaker for '{self.service_name}' is open, rejecting request "
+                    f"(will retry in {remaining_time:.1f}s)",
+                    extra={"service": self.service_name, "remaining_time": remaining_time}
                 )
                 raise CircuitBreakerOpenError(self.service_name)
         
@@ -200,17 +249,49 @@ class CircuitBreaker:
             # Success - reset if in half-open state
             if self.state == "half_open":
                 logger.info(
-                    f"Circuit breaker for '{self.service_name}' closing after successful call",
+                    f"Circuit breaker for '{self.service_name}' closing after successful call (service recovered)",
                     extra={"service": self.service_name}
                 )
                 self.state = "closed"
                 self.failure_count = 0
+                self.last_failure_time = None
             
             return result
             
         except Exception as e:
+            # Don't count timeouts or rate limits as circuit breaker failures - they're not service failures,
+            # just slow responses or temporary limits. The circuit breaker should only track actual service errors.
+            if isinstance(e, (AlphaLabTimeoutError, RateLimitError)):
+                # Log but don't count as a failure
+                error_type = "timeout" if isinstance(e, AlphaLabTimeoutError) else "rate limit"
+                logger.debug(
+                    f"Circuit breaker for '{self.service_name}' ignoring {error_type} (not counting as failure)",
+                    extra={
+                        "service": self.service_name,
+                        "error": str(e),
+                        "error_type": error_type
+                    }
+                )
+                raise
+            
+            # Count this as a failure (actual service error)
             self.failure_count += 1
             self.last_failure_time = time.time()
+            
+            # In half-open state, any failure immediately opens the circuit again
+            # (we reset failure_count to 0 when entering half-open, so this will be 1)
+            if self.state == "half_open":
+                logger.warning(
+                    f"Circuit breaker for '{self.service_name}' test failed in half-open state, "
+                    f"opening circuit again (service still unavailable)",
+                    extra={
+                        "service": self.service_name,
+                        "error": str(e),
+                        "failure_count": self.failure_count
+                    }
+                )
+                self.state = "open"
+                raise
             
             logger.error(
                 f"Circuit breaker for '{self.service_name}' recorded failure "

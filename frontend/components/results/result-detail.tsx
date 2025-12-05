@@ -177,7 +177,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
 
     const shareData = {
       title: `AlphaLab Certificate - ${result.agent_name}`,
-      text: `My AI trading agent "${result.agent_name}" achieved ${isProfitable ? "+" : ""}${totalPnL.toFixed(2)}% return on AlphaLab! 🚀`,
+      text: `My AI trading agent "${result.agent_name}" achieved ${isProfitable ? "+" : ""}${(totalPnL ?? 0).toFixed(2)}% return on AlphaLab! 🚀`,
       url: shareUrl,
     };
 
@@ -238,8 +238,8 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
   );
   const analysisText =
     result.ai_summary ??
-    `Overall performance derived from ${totalTrades} trades with ${winRate.toFixed(1)}% win rate.`;
-  const avgTrade = result.avg_trade_pnl !== undefined ? `${result.avg_trade_pnl.toFixed(2)}%` : "—";
+    `Overall performance derived from ${totalTrades} trades with ${(winRate ?? 0).toFixed(1)}% win rate.`;
+  const avgTrade = result.avg_trade_pnl != null ? `${(result.avg_trade_pnl ?? 0).toFixed(2)}%` : "—";
 
   return (
     <div className="space-y-6">
@@ -271,7 +271,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
                 )}
               >
               {isProfitable ? "+" : ""}
-              {totalPnL.toFixed(2)}%
+              {(totalPnL ?? 0).toFixed(2)}%
               </span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -346,7 +346,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
                 )}
               >
                 {isProfitable ? "+" : ""}
-                {totalPnL.toFixed(2)}%
+                {(totalPnL ?? 0).toFixed(2)}%
               </p>
             </div>
           </CardContent>
@@ -359,7 +359,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Win Rate</p>
-              <p className="font-mono text-xl font-bold">{winRate.toFixed(1)}%</p>
+              <p className="font-mono text-xl font-bold">{(winRate ?? 0).toFixed(1)}%</p>
             </div>
           </CardContent>
         </Card>
@@ -372,7 +372,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
             <div>
               <p className="text-xs text-muted-foreground">Max Drawdown</p>
               <p className="font-mono text-xl font-bold text-[hsl(var(--accent-red))]">
-                {maxDrawdown.toFixed(2)}%
+                {(maxDrawdown ?? 0).toFixed(2)}%
               </p>
             </div>
           </CardContent>
@@ -584,7 +584,7 @@ export function ResultDetail({ resultId }: ResultDetailProps) {
                 <p>
                   <strong className="text-foreground">Areas for Improvement:</strong>{" "}
                   Consider refining exit timing to capture more profit on winning trades.
-                  The drawdown of {maxDrawdown.toFixed(2)}% suggests position sizing could be optimized.
+                  The drawdown of {(maxDrawdown ?? 0).toFixed(2)}% suggests position sizing could be optimized.
                 </p>
                 <p>
                   <strong className="text-foreground">Market Conditions:</strong>{" "}
