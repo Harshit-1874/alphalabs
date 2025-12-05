@@ -5,7 +5,8 @@ import { SidebarProvider, SidebarInset, SidebarTrigger, useSidebar } from "@/com
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { usePathname } from "next/navigation";
-import { useUIStore } from "@/lib/stores";
+import { useUIStore, useArenaStore, useAgentsStore } from "@/lib/stores";
+import type { LiveSessionData } from "@/lib/stores/dynamic-island-store";
 import { GlobalDynamicIsland } from "@/components/ui/global-dynamic-island";
 import { useDynamicIslandDemoRotation } from "@/lib/use-dynamic-island-demo-rotation";
 import type { AccentColor } from "@/types";
@@ -83,24 +84,55 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const isResultsPage = pathname.startsWith("/dashboard/results");
   const isCertsPage = pathname.startsWith("/dashboard/certs");
   const { stats, averageProfit, activity } = useDashboardDataContext();
-  
+
+  // Get active session data for Dynamic Island
+  const activeSessionId = useArenaStore((state) => state.activeSessionId);
+  const sessionData = useArenaStore((state) => state.sessionData);
+  const backtestConfig = useArenaStore((state) => state.backtestConfig);
+  const agents = useAgentsStore((state) => state.agents);
+
   // Determine rotation context and preparing message:
   // - Dashboard root, Agents, Results, Certs: show dashboard rotation
   // - Config pages: show static preparing message
   // - Battle/Live pages: null (let battle-screen.tsx control the island)
-  const rotationContext = (isDashboardRoot || isAgentsPage || isResultsPage || isCertsPage) 
-    ? ("dashboard" as const) 
+  const rotationContext = (isDashboardRoot || isAgentsPage || isResultsPage || isCertsPage)
+    ? ("dashboard" as const)
     : null;
-  
+
   const preparingConfig = useMemo(() => {
     // Only show preparing on config pages (not on battle/live pages)
     if (isBacktestConfig && !isBattlePage) return { type: "backtest" as const };
     if (isForwardConfig && !isBattlePage) return { type: "forward" as const };
     return undefined;
   }, [isBacktestConfig, isForwardConfig, isBattlePage]);
-  
+
   const rotationData = useMemo(() => {
     if (!stats) return undefined;
+
+    // Build live session data if there's an active session
+    let liveSession: LiveSessionData | undefined;
+    if (activeSessionId && sessionData[activeSessionId]) {
+      const session = sessionData[activeSessionId];
+      const agent = agents.find((a) => a.id === backtestConfig?.agentId);
+      const startTime = session.startedAt ? new Date(session.startedAt).getTime() : Date.now();
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const minutes = Math.floor(elapsed / 60);
+      const seconds = elapsed % 60;
+      const duration = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+      liveSession = {
+        agentName: agent?.name || "AI Agent",
+        pnl: session.pnl || 0,
+        duration,
+        status: session.status === "running" ? "running" : "paused",
+        sessionId: activeSessionId,
+        sessionType: "backtest",
+        totalTrades: session.trades?.length || 0,
+        equity: session.equity,
+        winRate: session.winRate,
+      };
+    }
+
     return {
       stats: {
         totalAgents: stats.totalAgents,
@@ -111,20 +143,21 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       winRate: stats.trends.winRateChange ?? null,
       activity: activity.length
         ? {
-            agentName: activity[0].agentName ?? "Agent",
-            description: activity[0].description,
-            pnl: activity[0].pnl ?? undefined,
-            resultId: activity[0].resultId ?? undefined,
-          }
+          agentName: activity[0].agentName ?? "Agent",
+          description: activity[0].description,
+          pnl: activity[0].pnl ?? undefined,
+          resultId: activity[0].resultId ?? undefined,
+        }
         : undefined,
+      liveSession,
     };
-  }, [stats, averageProfit, activity]);
+  }, [stats, averageProfit, activity, activeSessionId, sessionData, backtestConfig, agents]);
 
   useDynamicIslandDemoRotation(rotationContext, preparingConfig, rotationData);
-  
+
   const getPageTitle = () => {
     if (pageTitles[pathname]) return pageTitles[pathname];
-    
+
     if (pathname.startsWith("/dashboard/agents/") && pathname.includes("/edit")) {
       return "Edit Agent";
     }
@@ -140,10 +173,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (pathname.startsWith("/dashboard/results/")) {
       return "Test Result";
     }
-    
+
     return "Dashboard";
   };
-  
+
   return (
     <SidebarProvider>
       <KeyboardShortcuts />
@@ -164,7 +197,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
             </span>
           </div>
         </header>
-        
+
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto">
           <div className="container max-w-[1400px] mx-auto px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8">
