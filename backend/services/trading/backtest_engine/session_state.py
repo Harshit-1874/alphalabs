@@ -66,6 +66,9 @@ class SessionState:
     playback_speed: str = "normal"
     decision_mode: str = "every_candle"
     decision_interval_candles: int = 1
+    # Council Mode Configuration
+    council_mode: bool = False
+    council_config: Optional[Dict[str, Any]] = None
     user_id: str = ""
     asset: str = ""
     timeframe: str = ""

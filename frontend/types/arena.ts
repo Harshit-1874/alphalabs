@@ -36,6 +36,10 @@ export interface BacktestConfig {
   allowLeverage: boolean;
   decisionMode: "every_candle" | "every_n_candles";
   decisionIntervalCandles: number;
+  // Council Mode - IMPORTANT: councilModels are ADDITIONAL models (bot's model auto-included as first member)
+  councilMode?: boolean;
+  councilModels?: string[];  // Additional models to join the bot's model
+  councilChairmanModel?: string;  // Chairman model (defaults to bot's model if empty)
 }
 
 export interface ForwardTestConfig {
@@ -98,6 +102,45 @@ export interface AIThought {
   action?: "long" | "short" | "hold" | "close";
   decisionMode?: "every_candle" | "every_n_candles";
   decisionInterval?: number;
+  // Council deliberation data
+  councilDeliberation?: CouncilDeliberation;
+}
+
+// Council Mode Types
+export interface CouncilConfig {
+  enabled: boolean;
+  models: string[];
+  chairmanModel: string;
+}
+
+export interface CouncilStage1Response {
+  model: string;
+  response: string;
+}
+
+export interface CouncilStage2Response {
+  model: string;
+  ranking: string;
+  parsed_ranking?: string[];
+}
+
+export interface CouncilStage3Response {
+  model: string;
+  response: string;
+}
+
+export interface CouncilAggregateRanking {
+  model: string;
+  average_rank: number;
+  rankings_count: number;
+}
+
+export interface CouncilDeliberation {
+  stage1: CouncilStage1Response[];
+  stage2: CouncilStage2Response[];
+  stage3: CouncilStage3Response;
+  aggregate_rankings: CouncilAggregateRanking[];
+  label_to_model: Record<string, string>;
 }
 
 export interface LiveSession {

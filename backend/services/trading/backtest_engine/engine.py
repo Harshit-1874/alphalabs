@@ -29,7 +29,7 @@ Usage:
 import asyncio
 import logging
 from datetime import datetime, date, timezone
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -108,6 +108,9 @@ class BacktestEngine:
         decision_interval_candles: int = 1,
         indicator_readiness_threshold: float = 80.0,
         user_id: str = "",
+        council_mode: bool = False,
+        council_models: Optional[List[str]] = None,
+        council_chairman_model: Optional[str] = None,
     ) -> None:
         """
         Start a backtest session.
@@ -259,12 +262,51 @@ class BacktestEngine:
                     f"The API key may be corrupted. Please update it."
                 ) from e
             
-            ai_trader = AITrader(
-                api_key=api_key,
-                model=agent.model,
-                strategy_prompt=agent.strategy_prompt,
-                mode=agent.mode
-            )
+            # Initialize AI trader (council mode or standard)
+            if council_mode:
+                from services.ai_council_trader import AICouncilTrader
+                from services.llm_council.config import CouncilConfig
+                
+                # IMPORTANT: Bot's model is ALWAYS the first council member
+                # Additional models are provided via council_models parameter
+                
+                # If no additional models provided, use defaults
+                if not council_models:
+                    # Get 2 default additional models (bot's model will be added as #1)
+                    default_config = CouncilConfig.create_default(api_key, num_models=2)
+                    additional_models = default_config.council_models[:2]
+                else:
+                    additional_models = council_models
+                
+                # Build final council: Bot's model + additional models
+                final_council_models = [agent.model] + additional_models
+                
+                # Chairman defaults to bot's model if not specified
+                chairman = council_chairman_model or agent.model
+                
+                logger.info(
+                    f"Initializing Council Mode with {len(final_council_models)} models: "
+                    f"Lead={agent.model} (bot), Additional={additional_models}, Chairman={chairman}"
+                )
+                
+                ai_trader = AICouncilTrader(
+                    api_key=api_key,
+                    council_models=final_council_models,
+                    chairman_model=chairman,
+                    strategy_prompt=agent.strategy_prompt,
+                    mode=agent.mode,
+                    model_timeout=30.0,
+                    total_timeout=60.0
+                )
+            else:
+                from services.ai_trader import AITrader
+                
+                ai_trader = AITrader(
+                    api_key=api_key,
+                    model=agent.model,
+                    strategy_prompt=agent.strategy_prompt,
+                    mode=agent.mode
+                )
             
             # Eagerly initialize model metadata to avoid fetching during trading decisions
             await ai_trader.initialize()
@@ -285,6 +327,13 @@ class BacktestEngine:
             )
             
             # Create session state
+            council_config_dict = None
+            if council_mode:
+                council_config_dict = {
+                    "models": council_models,
+                    "chairman": council_chairman_model
+                }
+            
             session_state = SessionState(
                 session_id=session_id,
                 agent=agent,
@@ -298,6 +347,8 @@ class BacktestEngine:
                 playback_speed=playback_speed,
                 decision_mode=decision_mode,
                 decision_interval_candles=decision_interval_candles,
+                council_mode=council_mode,
+                council_config=council_config_dict,
                 user_id=user_id,
                 asset=asset,
                 timeframe=timeframe,

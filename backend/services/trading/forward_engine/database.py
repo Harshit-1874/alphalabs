@@ -208,7 +208,11 @@ class DatabaseManager:
                 thought_type="decision",
                 reasoning=thought["reasoning"],
                 decision=thought["decision"].lower() if thought["decision"] else None,
-                order_data=thought.get("order_data")
+                order_data=thought.get("order_data"),
+                # Persist council deliberation if present
+                council_stage1=thought.get("council_stage1"),
+                council_stage2=thought.get("council_stage2"),
+                council_metadata=thought.get("council_metadata"),
             )
             db.add(ai_thought)
         

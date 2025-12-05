@@ -21,6 +21,10 @@ class BacktestStartRequest(BaseModel):
     decision_mode: str = "every_candle"
     decision_interval_candles: int = Field(1, ge=1, description="Interval used with every_n_candles")
     indicator_readiness_threshold: Optional[float] = Field(80.0, ge=50.0, le=100.0, description="Minimum percentage of indicators that must be ready before trading starts (50-100%)")
+    # Council Mode Configuration
+    council_mode: bool = Field(False, description="Enable multi-LLM council deliberation")
+    council_models: Optional[List[str]] = Field(None, description="ADDITIONAL model IDs to join the council (bot's model is always included as the first member)")
+    council_chairman_model: Optional[str] = Field(None, description="Model ID for chairman/synthesizer (defaults to bot's model)")
 
     @validator('date_preset')
     def validate_preset(cls, v):
@@ -58,6 +62,9 @@ class BacktestSessionResponse(BaseModel):
     decision_interval_candles: int = 1
     safety_mode: bool = True
     allow_leverage: bool = False
+    council_mode: bool = False
+    council_models: Optional[List[str]] = None  # Additional models (bot's model always included)
+    council_chairman_model: Optional[str] = None  # Chairman (defaults to bot's model)
     preview_candles: Optional[List[CandleSchema]] = None
 
 class BacktestStartResponse(BaseModel):
