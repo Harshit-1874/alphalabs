@@ -31,7 +31,8 @@ MODEL_ID_MAPPING = {
     "qwen3-4b": "qwen/qwen3-4b:free",
     "gpt-oss-20b": "openai/gpt-oss-20b",
     "trinity-mini": "arcee-ai/trinity-mini",
-    "nova-2-lite": "amazon/nova-2-lite-v1",
+    "nova-2-lite": "amazon/nova-2-lite-v1:free",
+    "amazon/nova-2-lite-v1": "amazon/nova-2-lite-v1:free",  # Fix agents using paid version
     "hermes-3-405b-instruct": "nousresearch/hermes-3-llama-3.1-405b",
     "nemotron-nano-12b-vl": "nvidia/nemotron-nano-12b-v2-vl",
     "nemotron-nano-9b-v2": "nvidia/nemotron-nano-9b-v2",

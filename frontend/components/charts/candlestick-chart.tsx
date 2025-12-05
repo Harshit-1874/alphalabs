@@ -187,10 +187,16 @@ function CandlestickChartComponent({
     if (!candleSeriesRef.current) return;
     
     if (data.length === 0) {
-      // Clear chart if no data
-      candleSeriesRef.current.setData([]);
-      if (volumeSeriesRef.current) {
-        volumeSeriesRef.current.setData([]);
+      // Clear chart if no data - but don't remove the chart itself
+      // This allows the chart to remain visible with empty state
+      try {
+        candleSeriesRef.current.setData([]);
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.setData([]);
+        }
+      } catch (error) {
+        // Ignore errors when clearing empty data
+        console.debug("Chart clear error (expected when empty):", error);
       }
       return;
     }
@@ -205,32 +211,91 @@ function CandlestickChartComponent({
     if (prevLength > 0 && currentLength === prevLength) {
       // Only last candle updated - use incremental update
       const lastCandle = sortedData[sortedData.length - 1];
-      const lastCandleData: CandlestickData<Time> = {
-        time: (lastCandle.time / 1000) as Time,
-        open: lastCandle.open,
-        high: lastCandle.high,
-        low: lastCandle.low,
-        close: lastCandle.close,
-      };
+      const prevLastCandle = prevLastCandleRef.current;
       
-      // Always update the last candle for real-time price updates
-      candleSeriesRef.current.update(lastCandleData);
-
-      // Update volume if enabled
-      if (volumeSeriesRef.current && showVolume) {
-        const lastVolumeData = {
+      // Check if the new last candle is actually newer or equal to the previous one
+      // This prevents errors when fast-forwarding sends older candles
+      const canUpdate = !prevLastCandle || lastCandle.time >= prevLastCandle.time;
+      
+      if (canUpdate) {
+        const lastCandleData: CandlestickData<Time> = {
           time: (lastCandle.time / 1000) as Time,
-          value: lastCandle.volume,
-          color:
-            lastCandle.close >= lastCandle.open
-              ? `${colors.upColor}66`
-              : `${colors.downColor}66`,
+          open: lastCandle.open,
+          high: lastCandle.high,
+          low: lastCandle.low,
+          close: lastCandle.close,
         };
-        volumeSeriesRef.current.update(lastVolumeData);
+        
+        // Only update if the time is >= the last candle's time
+        // Lightweight Charts requires this for update() to work
+        try {
+          candleSeriesRef.current.update(lastCandleData);
+
+          // Update volume if enabled
+          if (volumeSeriesRef.current && showVolume) {
+            const lastVolumeData = {
+              time: (lastCandle.time / 1000) as Time,
+              value: lastCandle.volume,
+              color:
+                lastCandle.close >= lastCandle.open
+                  ? `${colors.upColor}66`
+                  : `${colors.downColor}66`,
+            };
+            volumeSeriesRef.current.update(lastVolumeData);
+          }
+        } catch (error) {
+          // If update fails (e.g., time is older), fall back to setData
+          console.warn("Failed to update candle, using setData instead:", error);
+          const candleData: CandlestickData<Time>[] = sortedData.map((d) => ({
+            time: (d.time / 1000) as Time,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close,
+          }));
+          candleSeriesRef.current.setData(candleData);
+          
+          if (volumeSeriesRef.current && showVolume) {
+            const volumeData = sortedData.map((d) => ({
+              time: (d.time / 1000) as Time,
+              value: d.volume,
+              color:
+                d.close >= d.open
+                  ? `${colors.upColor}66`
+                  : `${colors.downColor}66`,
+            }));
+            volumeSeriesRef.current.setData(volumeData);
+          }
+        }
+      } else {
+        // New candle is older than previous - use setData to replace all
+        const candleData: CandlestickData<Time>[] = sortedData.map((d) => ({
+          time: (d.time / 1000) as Time,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
+        }));
+        candleSeriesRef.current.setData(candleData);
+        
+        if (volumeSeriesRef.current && showVolume) {
+          const volumeData = sortedData.map((d) => ({
+            time: (d.time / 1000) as Time,
+            value: d.volume,
+            color:
+              d.close >= d.open
+                ? `${colors.upColor}66`
+                : `${colors.downColor}66`,
+          }));
+          volumeSeriesRef.current.setData(volumeData);
+        }
       }
       
-      // Update the ref to track current length
+      // Update the ref to track current length and last candle
       prevDataLengthRef.current = currentLength;
+      if (sortedData.length > 0) {
+        prevLastCandleRef.current = sortedData[sortedData.length - 1];
+      }
     } else {
       // New candle added or full data replacement - use setData()
       const candleData: CandlestickData<Time>[] = sortedData.map((d) => ({

@@ -90,6 +90,133 @@ class CandleProcessor:
         self.database_manager = database_manager
         self.logger = logging.getLogger(__name__)
     
+    def precompute_llm_call_points(
+        self,
+        session_state: Any,
+        total_candles: int
+    ) -> set[int]:
+        """
+        Pre-compute all candle indices where LLM calls should be made.
+        
+        This allows us to fast-forward through non-decision candles.
+        
+        Args:
+            session_state: Session state object
+            total_candles: Total number of candles in backtest
+            
+        Returns:
+            Set of candle indices where LLM calls should be made (based on normal cadence)
+        """
+        call_points = set()
+        
+        decision_start = session_state.decision_start_index
+        decision_mode = getattr(session_state, "decision_mode", "every_candle")
+        decision_interval = getattr(session_state, "decision_interval_candles", 1) or 1
+        
+        if decision_mode == "every_candle":
+            # Every candle after decision_start_index
+            for i in range(decision_start, total_candles):
+                call_points.add(i)
+        elif decision_mode == "every_n_candles":
+            # Every N candles after decision_start_index
+            for i in range(decision_start, total_candles):
+                elapsed = i - decision_start
+                if elapsed % decision_interval == 0:
+                    call_points.add(i)
+        
+        self.logger.info(
+            f"Pre-computed {len(call_points)} LLM call points "
+            f"(mode={decision_mode}, interval={decision_interval}, "
+            f"start_index={decision_start}, total_candles={total_candles})"
+        )
+        
+        return call_points
+    
+    async def fast_forward_candle(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        session_state: Any,
+        candle: Candle,
+        candle_index: int
+    ) -> Optional[str]:
+        """
+        Fast-forward through a candle with minimal processing.
+        
+        Only updates positions (for SL/TP checks) and processes pending orders.
+        Skips indicator calculation, broadcasting, and LLM calls.
+        
+        Args:
+            db: Database session
+            session_id: Session identifier
+            session_state: Session state object
+            candle: Current candle to process
+            candle_index: Current candle index
+            
+        Returns:
+            Close reason if position was closed, None otherwise
+        """
+        # Update open position if exists (for SL/TP checks)
+        if session_state.position_manager.has_open_position():
+            close_reason = await session_state.position_manager.update_position(
+                candle_high=candle.high,
+                candle_low=candle.low,
+                current_price=candle.close
+            )
+            
+            # If position was closed by stop-loss or take-profit
+            if close_reason:
+                closed_trade = session_state.position_manager.get_closed_trades()[-1]
+                await self.position_handler.handle_position_closed(
+                    db,
+                    session_id,
+                    session_state,
+                    closed_trade,
+                    candle_index,
+                    candle.timestamp
+                )
+                return close_reason
+        
+        # Process any pending order (limit-like entry)
+        if session_state.pending_order and not session_state.position_manager.has_open_position():
+            po = session_state.pending_order
+            entry_price = po.get("entry_price")
+            action = po.get("action")
+            size_pct = po.get("size_percentage", 0.0)
+            stop_loss = po.get("stop_loss_price")
+            take_profit = po.get("take_profit_price")
+            leverage = po.get("leverage", 1)
+
+            if entry_price is not None:
+                # Check if this candle's high/low touched the entry price
+                if candle.low <= entry_price <= candle.high:
+                    self.logger.info(
+                        f"Filling pending {action} order at {entry_price} on candle {candle_index}"
+                    )
+                    success = await session_state.position_manager.open_position(
+                        action=action.lower(),
+                        entry_price=entry_price,
+                        size_percentage=size_pct,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit,
+                        leverage=leverage,
+                    )
+                    if success:
+                        position = session_state.position_manager.get_position()
+                        await self.position_handler.handle_position_opened(
+                            db,
+                            session_id,
+                            session_state,
+                            position,
+                            candle_index,
+                            candle.timestamp,
+                            po.get("reasoning", "Pending order filled"),
+                        )
+                    # Clear the pending order after this candle
+                    session_state.pending_order = None
+        
+        return None
+    
     async def process_candle(
         self,
         db: AsyncSession,

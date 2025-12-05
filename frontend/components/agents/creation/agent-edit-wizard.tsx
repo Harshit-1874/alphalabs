@@ -110,22 +110,28 @@ export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
     try {
       let apiKeyId: string | undefined = undefined;
 
-      // If a new API key is provided (starts with "sk-"), save it first
-      if (formData.apiKey && formData.apiKey.startsWith("sk-")) {
-        try {
-          const newKey = await createApiKey({
-            provider: "openrouter",
-            api_key: formData.apiKey,
-            label: formData.saveApiKey
-              ? `${formData.name} - OpenRouter`
-              : `Temp - ${formData.name}`,
-            set_as_default: formData.saveApiKey,
-          });
-          apiKeyId = newKey.id;
-        } catch (error) {
-          toast.error("Failed to save API key. Please try again.");
-          setIsSaving(false);
-          return;
+      // Check if formData.apiKey is provided
+      if (formData.apiKey) {
+        // If it's a new API key (starts with "sk-"), save it first
+        if (formData.apiKey.startsWith("sk-")) {
+          try {
+            const newKey = await createApiKey({
+              provider: "openrouter",
+              api_key: formData.apiKey,
+              label: formData.saveApiKey
+                ? `${formData.name} - OpenRouter`
+                : `Temp - ${formData.name}`,
+              set_as_default: formData.saveApiKey,
+            });
+            apiKeyId = newKey.id;
+          } catch (error) {
+            toast.error("Failed to save API key. Please try again.");
+            setIsSaving(false);
+            return;
+          }
+        } else {
+          // It's an existing API key UUID - use it directly
+          apiKeyId = formData.apiKey;
         }
       }
 
@@ -139,7 +145,7 @@ export function AgentEditWizard({ agentId }: AgentEditWizardProps) {
         strategy_prompt: formData.strategyPrompt,
       };
 
-      // Only include api_key_id if a new key was provided
+      // Include api_key_id if a key was provided (new or existing)
       if (apiKeyId) {
         updateData.api_key_id = apiKeyId;
       }

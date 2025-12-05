@@ -147,15 +147,49 @@ class BacktestEngine:
             async with self.session_factory() as db:
                 # Reload agent with api_key relationship to avoid lazy loading issues
                 # This ensures we have fresh data in the proper async context
+                # IMPORTANT: Expire any existing agent object to force fresh load from DB
                 agent_id = agent.id
+                
+                # Expire the agent object if it's in this session to force fresh load
+                if agent in db.identity_map.values():
+                    db.expire(agent)
+                
+                # Use a fresh query to ensure we get the latest data from the database
+                # This is critical if the agent was just updated
+                from sqlalchemy.orm import joinedload
                 agent_result = await db.execute(
                     select(Agent)
-                    .options(selectinload(Agent.api_key))
+                    .options(joinedload(Agent.api_key))
                     .where(Agent.id == agent_id)
                 )
                 agent = agent_result.scalar_one_or_none()
                 if not agent:
                     raise ValidationError(f"Agent not found: {agent_id}")
+                
+                # Log for debugging
+                logger.info(
+                    f"Loaded agent '{agent.name}' (id={agent.id}): "
+                    f"api_key_id={agent.api_key_id}, "
+                    f"has_api_key_relationship={agent.api_key is not None}, "
+                    f"has_encrypted_key={agent.api_key.encrypted_key is not None if agent.api_key else False}"
+                )
+                
+                # Validate API key early - before starting any processing
+                if not agent.api_key_id:
+                    raise ValidationError(
+                        f"Agent '{agent.name}' does not have an API key configured (api_key_id is None). "
+                        f"Please add an API key to this agent before starting a backtest."
+                    )
+                if not agent.api_key:
+                    raise ValidationError(
+                        f"Agent '{agent.name}' has api_key_id={agent.api_key_id} but the API key relationship could not be loaded. "
+                        f"This might indicate the API key was deleted. Please update the agent with a valid API key."
+                    )
+                if not agent.api_key.encrypted_key:
+                    raise ValidationError(
+                        f"Agent '{agent.name}' has an API key reference but the encrypted_key is missing or invalid. "
+                        f"Please update the API key for this agent."
+                    )
                 
                 # Validate parameters
                 self._validate_parameters(asset, timeframe, start_dt, end_dt, starting_capital)
@@ -200,13 +234,24 @@ class BacktestEngine:
             )
             
             # Initialize AI trader
-            # Get API key from agent's api_key relationship
+            # API key was already validated above, but double-check here for safety
+            # (in case something changed between validation and this point)
             if not agent.api_key or not agent.api_key.encrypted_key:
-                raise ValidationError(f"Agent {agent.name} does not have a valid API key")
+                raise ValidationError(
+                    f"Agent '{agent.name}' does not have a valid API key. "
+                    f"This should have been caught earlier - please report this issue."
+                )
             
             # Decrypt API key
             from core.encryption import decrypt_api_key
-            api_key = decrypt_api_key(agent.api_key.encrypted_key)
+            try:
+                api_key = decrypt_api_key(agent.api_key.encrypted_key)
+            except Exception as e:
+                logger.error(f"Failed to decrypt API key for agent {agent.name}: {e}")
+                raise ValidationError(
+                    f"Failed to decrypt API key for agent '{agent.name}'. "
+                    f"The API key may be corrupted. Please update it."
+                ) from e
             
             ai_trader = AITrader(
                 api_key=api_key,
@@ -376,8 +421,9 @@ class BacktestEngine:
         """
         Main backtest processing loop.
         
-        Processes each candle sequentially, calculating indicators,
-        getting AI decisions, managing positions, and broadcasting events.
+        Optimized to pre-determine LLM call points and fast-forward through
+        non-decision candles. Only processes candles where decisions are needed
+        or where positions need attention.
         
         Args:
             session_id: Session identifier
@@ -390,6 +436,12 @@ class BacktestEngine:
         logger.info(f"Starting backtest processing: session_id={session_id}")
         
         try:
+            # Pre-compute all LLM call points based on decision mode
+            llm_call_points = self.processor.precompute_llm_call_points(
+                session_state,
+                len(session_state.candles)
+            )
+            
             # Create session for the backtest loop
             async with self.session_factory() as db:
                 # Process each candle
@@ -404,9 +456,76 @@ class BacktestEngine:
                     
                     # Get current candle
                     candle = session_state.candles[session_state.current_index]
+                    candle_index = session_state.current_index
                     
-                    # Process this candle using processor
-                    await self.processor.process_candle(db, session_id, session_state, candle)
+                    # Check if we have an open position (need to check for force conditions)
+                    has_position = session_state.position_manager.has_open_position()
+                    
+                    # Determine if this candle needs full processing
+                    is_llm_call_point = candle_index in llm_call_points
+                    
+                    # Check for force conditions if we have a position
+                    # (force conditions can't be pre-determined, so we check dynamically)
+                    force_decision = False
+                    if has_position:
+                        force_decision, _ = self.processor._should_force_llm_call(
+                            session_state, candle_index, 
+                            session_state.position_manager.get_position(), candle
+                        )
+                    
+                    # If this is a decision point or force condition, do full processing
+                    if is_llm_call_point or force_decision:
+                        # Full processing with LLM call
+                        await self.processor.process_candle(db, session_id, session_state, candle)
+                    else:
+                        # Fast-forward: only update positions and pending orders
+                        await self.processor.fast_forward_candle(
+                            db, session_id, session_state, candle, candle_index
+                        )
+                        
+                        # Update stats (in-memory only during fast-forward)
+                        stats = session_state.position_manager.get_stats()
+                        self.processor._record_equity_point(
+                            session_state, candle.timestamp, stats["current_equity"]
+                        )
+                        
+                        # Broadcast EVERY candle during fast-forward for smooth visual progression
+                        # This allows the chart to animate smoothly step-by-step, just very fast
+                        # We still skip LLM calls (that's the optimization), but show visual progress
+                        await self.broadcaster.broadcast_candle(
+                            session_id, candle, 
+                            session_state.indicator_calculator.calculate_all(candle_index),
+                            candle_index
+                        )
+                        
+                        # Batch database updates during fast-forward (every 10 candles) for performance
+                        # This reduces database I/O while still keeping data reasonably fresh
+                        if candle_index % 10 == 0:
+                            await self.database_manager.update_session_runtime_stats(
+                                db=db,
+                                session_id=session_id,
+                                current_equity=stats["current_equity"],
+                                current_pnl_pct=stats["equity_change_pct"],
+                                max_drawdown_pct=session_state.max_drawdown_pct,
+                                elapsed_seconds=self.processor._compute_elapsed_seconds(session_state),
+                                open_position=self.processor._serialize_position(
+                                    session_state.position_manager.get_position()
+                                ),
+                                current_candle=candle_index + 1,
+                            )
+                            await self.broadcaster.broadcast_stats_update(session_id, stats)
+                        
+                        # Fast-forward: Minimal delay for maximum speed
+                        # We broadcast every candle so the chart animates smoothly
+                        # The delay is minimal to allow the browser to keep up with updates
+                        # For instant mode, we skip delay entirely
+                        if session_state.playback_speed == "instant":
+                            # No delay in instant mode - go as fast as possible
+                            pass
+                        else:
+                            # Very minimal delay (0.5ms) just to yield to event loop
+                            # This allows browser to render updates while still being extremely fast
+                            await asyncio.sleep(0.0005)  # 0.5ms per candle = ~2000 candles/second theoretical
                     
                     # Move to next candle
                     session_state.current_index += 1
@@ -416,8 +535,9 @@ class BacktestEngine:
                         db, session_id, session_state.current_index
                     )
                     
-                    # Apply playback speed delay (except for instant)
-                    if session_state.playback_speed != "instant":
+                    # Apply playback speed delay only for decision candles (or instant mode)
+                    # This makes fast-forward truly fast
+                    if (is_llm_call_point or force_decision) and session_state.playback_speed != "instant":
                         delay_ms = self._get_playback_delay(session_state.playback_speed)
                         if delay_ms > 0:
                             await asyncio.sleep(delay_ms / 1000.0)

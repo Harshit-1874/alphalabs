@@ -37,6 +37,7 @@ import { useResultsApi } from "@/hooks/use-results-api";
 import { useApiClient } from "@/lib/api";
 import { NARRATOR_MESSAGES } from "@/lib/dummy-island-data";
 import { toast } from "sonner";
+import { BattleScreenSkeleton, ChartSkeleton, StatsRowSkeleton } from "@/components/ui/skeletons";
 import type { CandleData, AIThought, Trade, PlaybackSpeed, TradeMarker } from "@/types";
 
 interface BattleScreenProps {
@@ -141,10 +142,29 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     ? Math.round((trades.filter((t) => t.pnl > 0).length / trades.length) * 100)
     : 0);
 
-  // WebSocket event handler
+  // WebSocket event handler with debouncing for performance
   useEffect(() => {
     setActiveSessionId(sessionId);
   }, [sessionId, setActiveSessionId]);
+
+  // Debounce stats updates to reduce re-renders
+  const statsUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingStatsRef = useRef<{ equity?: number; pnl?: number } | null>(null);
+
+  const debouncedUpdateStats = useCallback((sessionId: string, stats: { equity?: number; pnl?: number }) => {
+    pendingStatsRef.current = { ...pendingStatsRef.current, ...stats };
+    
+    if (statsUpdateTimeoutRef.current) {
+      clearTimeout(statsUpdateTimeoutRef.current);
+    }
+    
+    statsUpdateTimeoutRef.current = setTimeout(() => {
+      if (pendingStatsRef.current) {
+        updateSessionStats(sessionId, pendingStatsRef.current);
+        pendingStatsRef.current = null;
+      }
+    }, 100); // Debounce stats updates by 100ms
+  }, [updateSessionStats]);
 
   const handleWebSocketEvent = useCallback((event: WebSocketEvent) => {
     switch (event.type) {
@@ -254,9 +274,9 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         break;
 
       case "stats_update":
-        // Stats updated - store in Zustand
+        // Stats updated - store in Zustand (debounced)
         if (event.data) {
-          updateSessionStats(sessionId, {
+          debouncedUpdateStats(sessionId, {
             equity: event.data.current_equity,
             pnl: event.data.equity_change_pct,
           });
@@ -279,7 +299,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         }
         break;
     }
-  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId, triggerResultsRefresh]);
+  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId, triggerResultsRefresh, debouncedUpdateStats, addCandle, addTrade, addThought]);
 
   // Connect to WebSocket
   const { isConnected, sessionState, error: wsError } = useBacktestWebSocket(
@@ -599,6 +619,10 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   useEffect(() => {
     return () => {
       hide();
+      // Cleanup debounce timeout
+      if (statsUpdateTimeoutRef.current) {
+        clearTimeout(statsUpdateTimeoutRef.current);
+      }
     };
   }, [hide]);
 
@@ -619,21 +643,10 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   const hiddenThoughts = Math.max(thoughts.length - visibleThoughts.length, 0);
   const hiddenTrades = Math.max(trades.length - visibleTrades.length, 0);
 
-  // Show minimal loading state - don't block UI completely
+  // Show skeleton loading state - don't block UI completely
   // WebSocket will start connecting immediately and data will flow in
   if (isLoading && !sessionStatus && candles.length === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-120px)]">
-        <Card className="border-border/50 bg-card/30">
-          <CardContent className="p-8 text-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <p className="text-sm text-muted-foreground">Connecting to session...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <BattleScreenSkeleton />;
   }
 
   // Treat API errors as fatal, but WebSocket errors are transient because
@@ -660,20 +673,10 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     );
   }
 
-  // If still loading or no sessionStatus yet, show loading
-  if (isLoading || !sessionStatus) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-120px)]">
-        <Card className="border-border/50 bg-card/30">
-          <CardContent className="p-8 text-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <p className="text-sm text-muted-foreground">Loading session data...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+  // If still loading or no sessionStatus yet, show skeleton
+  // But allow partial rendering if we have some data from WebSocket
+  if ((isLoading || !sessionStatus) && candles.length === 0 && thoughts.length === 0) {
+    return <BattleScreenSkeleton />;
   }
 
   // Only show "agent not found" if we have no agent info at all (neither from store nor API)
@@ -883,12 +886,16 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
           {/* Chart */}
           <Card className="border-border/50 bg-card/30 shrink-0">
             <CardContent className="p-1.5 sm:p-2">
-              <CandlestickChart
-                data={visibleCandles}
-                markers={decisionMarkers}
-                height={300}
-                showVolume
-              />
+              {visibleCandles.length === 0 ? (
+                <ChartSkeleton height={300} />
+              ) : (
+                <CandlestickChart
+                  data={visibleCandles}
+                  markers={decisionMarkers}
+                  height={300}
+                  showVolume
+                />
+              )}
             </CardContent>
           </Card>
 

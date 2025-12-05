@@ -70,7 +70,7 @@ AVAILABLE_MODELS: List[ModelInfo] = [
         capabilities=["text", "reasoning", "tool-calling"],
     ),
     ModelInfo(
-        id="amazon/nova-2-lite-v1",
+        id="amazon/nova-2-lite-v1:free",
         name="Amazon Nova 2 Lite",
         provider="amazon",
         description="Fast, cost-efficient reasoning model with multimodal (text/image/video) understanding.",
