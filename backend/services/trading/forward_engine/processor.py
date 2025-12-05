@@ -468,3 +468,152 @@ class CandleProcessor:
             elapsed = max(0, candle_index - session_state.decision_start_index)
             return elapsed % interval == 0
         return True
+    
+    async def process_initial_ai_decision(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        session_state: Any,
+        email_notifications: bool
+    ) -> None:
+        """
+        Process an initial AI decision based on historical data when forward test starts.
+        
+        This gives users immediate AI analysis without waiting for the first live candle.
+        Uses the last historical candle which is already in candles_processed.
+        
+        Args:
+            db: Database session
+            session_id: Session identifier
+            session_state: Session state object
+            email_notifications: Whether to send email notifications
+        """
+        if not session_state.candles_processed:
+            self.logger.warning(
+                f"No historical candles available for initial AI decision: session_id={session_id}"
+            )
+            return
+        
+        if session_state.indicator_calculator is None:
+            self.logger.warning(
+                f"Indicator calculator not initialized for initial AI decision: session_id={session_id}"
+            )
+            return
+        
+        # Use the last historical candle (already in candles_processed)
+        last_idx = len(session_state.candles_processed) - 1
+        
+        # Check if we have enough data for AI decisions
+        if last_idx < session_state.decision_start_index:
+            self.logger.info(
+                f"Skipping initial AI decision: not enough historical data "
+                f"(last_idx={last_idx}, decision_start_index={session_state.decision_start_index})"
+            )
+            return
+        
+        last_candle = session_state.candles_processed[-1]
+        
+        self.logger.info(
+            f"Processing initial AI decision on historical data: "
+            f"session_id={session_id}, candle_idx={last_idx}, timestamp={last_candle.timestamp}"
+        )
+        
+        # Calculate indicators for the last candle
+        indicators = session_state.indicator_calculator.calculate_all(last_idx)
+        
+        # For the *initial* decision we only log readiness, we don't block on it.
+        # This guarantees one immediate AI call on forward start as long as we're
+        # past decision_start_index.
+        ready_count = sum(1 for v in indicators.values() if v is not None)
+        total_count = len(indicators)
+        ready_pct = (ready_count / total_count * 100) if total_count > 0 else 0
+        
+        self.logger.info(
+            f"Initial AI decision indicator readiness: {ready_count}/{total_count} ({ready_pct:.1f}%)"
+        )
+
+        # Broadcast AI thinking event
+        await self.broadcaster.broadcast_ai_thinking(session_id)
+        
+        # Get position state and equity for AI decision
+        position_state = session_state.position_manager.get_position()
+        equity = session_state.position_manager.get_total_equity()
+        
+        # Get AI decision
+        decision = await session_state.ai_trader.get_decision(
+            candle=last_candle,
+            indicators=indicators,
+            position_state=position_state,
+            equity=equity
+        )
+        
+        self.logger.info(
+            f"Initial AI decision received: action={decision.action}, reasoning={decision.reasoning[:100]}..."
+        )
+        
+        # Store AI thought
+        council_deliberation = None
+        if decision.decision_context and isinstance(decision.decision_context, dict):
+            council_deliberation = decision.decision_context.get("council_deliberation")
+        
+        ai_thought = {
+            "candle_number": last_idx,
+            "timestamp": last_candle.timestamp,
+            "candle_data": {
+                "open": last_candle.open,
+                "high": last_candle.high,
+                "low": last_candle.low,
+                "close": last_candle.close,
+                "volume": last_candle.volume
+            },
+            "indicator_values": indicators,
+            "reasoning": decision.reasoning,
+            "decision": decision.action,
+            "order_data": {
+                "stop_loss_price": decision.stop_loss_price,
+                "take_profit_price": decision.take_profit_price,
+                "size_percentage": decision.size_percentage,
+                "leverage": decision.leverage
+            } if decision.action in ["LONG", "SHORT"] else None,
+            "council_stage1": council_deliberation.get("stage1") if council_deliberation else None,
+            "council_stage2": council_deliberation.get("stage2") if council_deliberation else None,
+            "council_metadata": {
+                "aggregate_rankings": council_deliberation.get("aggregate_rankings"),
+                "label_to_model": council_deliberation.get("label_to_model"),
+                "stage3": council_deliberation.get("stage3"),
+            } if council_deliberation else None,
+            "is_initial": True,  # Mark this as the initial analysis
+        }
+        session_state.ai_thoughts.append(ai_thought)
+        
+        # Broadcast AI decision event
+        await self.broadcaster.broadcast_ai_decision(session_id, decision)
+        
+        # Execute AI decision (can open positions based on initial analysis)
+        await self.execute_decision(
+            db,
+            session_id,
+            session_state,
+            decision,
+            last_candle,
+            last_idx,
+            email_notifications
+        )
+        
+        # Broadcast stats update
+        stats = session_state.position_manager.get_stats()
+        self._record_equity_point(session_state, last_candle.timestamp, stats["current_equity"])
+        await self.broadcaster.broadcast_stats_update(session_id, stats)
+        await self.database_manager.update_session_runtime_stats(
+            db=db,
+            session_id=session_id,
+            current_equity=stats["current_equity"],
+            current_pnl_pct=stats["equity_change_pct"],
+            max_drawdown_pct=session_state.max_drawdown_pct,
+            elapsed_seconds=self._compute_elapsed_seconds(session_state),
+            open_position=self._serialize_position(session_state.position_manager.get_position()),
+        )
+        
+        self.logger.info(
+            f"Initial AI decision processed successfully: session_id={session_id}"
+        )

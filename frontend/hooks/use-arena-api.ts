@@ -162,12 +162,54 @@ export function useArenaApi() {
     [get]
   );
 
+  const getBacktestHistory = useCallback(
+    async (sessionId: string) => {
+      return get<{
+        candles: any[];
+        thoughts: Array<{
+          candle_number: number;
+          timestamp: string;
+          decision?: string | null;
+          reasoning?: string | null;
+          indicator_values?: Record<string, number | null>;
+          order_data?: any;
+          council_stage1?: any;
+          council_stage2?: any;
+          council_metadata?: any;
+        }>;
+        trades: any[];
+      }>(`/api/arena/backtest/${sessionId}/history`);
+    },
+    [get]
+  );
+
   const getForwardStatus = useCallback(
     async (sessionId: string) => {
       const response = await get<{ session: ForwardStatusResponse }>(
         `/api/arena/forward/${sessionId}`
       );
       return response.session;
+    },
+    [get]
+  );
+
+  const getForwardHistory = useCallback(
+    async (sessionId: string) => {
+      return get<{
+        candles: any[];
+        thoughts: Array<{
+          candle_number: number;
+          timestamp: string;
+          decision?: string | null;
+          reasoning?: string | null;
+          indicator_values?: Record<string, number | null>;
+          order_data?: any;
+          council_stage1?: any;
+          council_stage2?: any;
+          council_metadata?: any;
+        }>;
+        trades: any[];
+      }>(`/api/arena/forward/${sessionId}/history`);
     },
     [get]
   );
@@ -186,7 +228,9 @@ export function useArenaApi() {
     startBacktest,
     startForwardTest,
     getBacktestStatus,
+    getBacktestHistory,
     getForwardStatus,
+    getForwardHistory,
     cleanupActiveSessions,
   };
 }

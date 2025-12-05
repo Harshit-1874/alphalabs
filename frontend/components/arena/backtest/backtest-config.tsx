@@ -46,8 +46,8 @@ export function BacktestConfig() {
   const [config, setConfig] = useState({
     agentId: preselectedAgent || "",
     asset: "",
-    timeframe: "",
-    datePreset: "30d",
+    timeframe: "4h",
+    datePreset: "7d",
     startDate: "",
     endDate: "",
     capital: "10000",
@@ -83,8 +83,14 @@ export function BacktestConfig() {
   }, [assets, config.asset]);
 
   useEffect(() => {
-    if (!config.timeframe && timeframes.length) {
-      setConfig((prev) => ({ ...prev, timeframe: timeframes[0].id }));
+    if (timeframes.length) {
+      // If no timeframe is set, or current timeframe is not in the list, set to "4h" if available, otherwise first
+      const fourHourTimeframe = timeframes.find((tf) => tf.id === "4h");
+      const currentTimeframeExists = timeframes.some((tf) => tf.id === config.timeframe);
+      
+      if (!config.timeframe || !currentTimeframeExists) {
+        setConfig((prev) => ({ ...prev, timeframe: fourHourTimeframe?.id || timeframes[0].id }));
+      }
     }
   }, [timeframes, config.timeframe]);
 

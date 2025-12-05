@@ -203,6 +203,15 @@ async def handle_backtest_websocket(
             f"Backtest WebSocket connected: session={session_id}, conn={connection_id}, user={clerk_user_id}"
         )
         
+        # Send historical candles to reconnecting connection (if session is already running)
+        # This allows clients to see the full chart when refreshing during an active backtest
+        try:
+            from services.trading.engine_factory import get_backtest_engine
+            engine = get_backtest_engine()
+            await engine.send_historical_candles_to_connection(session_id, connection_id)
+        except Exception as exc:
+            logger.debug(f"Could not send historical candles to new connection (likely not started yet): {exc}")
+        
         while True:
             try:
                 data = await websocket.receive_text()
@@ -249,12 +258,14 @@ async def handle_forward_websocket(
             f"Forward test WebSocket connected: session={session_id}, conn={connection_id}, user={clerk_user_id}"
         )
         
-        # Send historical candles to new connection
+        # Send historical candles to new connection (if session is already initialized)
+        # Note: It's normal for the session to not be ready yet if the WebSocket connects
+        # during the initialization phase. Historical candles will be sent once processing starts.
         try:
             engine = get_forward_engine()
             await engine.send_historical_candles_to_connection(session_id, connection_id)
         except Exception as exc:
-            logger.warning(f"Failed to send historical candles to new connection: {exc}")
+            logger.debug(f"Could not send historical candles to new connection (likely still initializing): {exc}")
         
         while True:
             try:

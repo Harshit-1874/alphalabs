@@ -14,14 +14,16 @@ from sqlalchemy.orm import selectinload
 from database import get_db
 from schemas.arena_schemas import (
     BacktestStartRequest, BacktestStartResponse, BacktestSessionResponse,
-    BacktestStatusResponse, PauseResponse, ResumeResponse, StopRequest, StopResponse,
+    BacktestStatusResponse, BacktestHistoryResponse, BacktestHistoryThought,
+    PauseResponse, ResumeResponse, StopRequest, StopResponse,
     OpenPosition, BacktestStatusWrapper,
     ForwardStartRequest, ForwardStartResponse, ForwardSessionResponse,
-    ForwardActiveSession, ForwardActiveListResponse, ForwardStatusWrapper, ForwardStopResponse
+    ForwardActiveSession, ForwardActiveListResponse, ForwardStatusWrapper, ForwardStopResponse,
+    ForwardHistoryResponse
 )
 from schemas.data_schemas import CandleSchema
 from models.agent import Agent
-from models.arena import TestSession, Trade
+from models.arena import TestSession, Trade, AiThought
 from models.result import TestResult
 from services.trading.backtest_engine import BacktestEngine
 from services.trading.forward_engine import ForwardEngine
@@ -895,10 +897,11 @@ async def start_backtest(
     # Start backtest in background
     # We use background_tasks to trigger the engine's start method
     # The engine will handle its own background task for the loop
+    # Pass agent_id instead of agent object to avoid SQLAlchemy lazy loading issues in background tasks
     background_tasks.add_task(
         engine.start_backtest,
         session_id=str(session_id),
-        agent=agent,
+        agent_id=agent_id,  # Pass agent_id to avoid expired object issues
         asset=request.asset,
         timeframe=request.timeframe,
         start_date=start_dt,
@@ -1081,6 +1084,155 @@ async def get_backtest_status(
         }
     }
 
+@router.get("/backtest/{id}/history", response_model=BacktestHistoryResponse)
+async def get_backtest_history(
+    id: UUID,
+    limit_thoughts: int = Query(200, ge=1, le=500),
+    limit_trades: int = Query(200, ge=1, le=500),
+    limit_candles: int = Query(500, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    engine: BacktestEngine = Depends(get_backtest_engine)
+):
+    """
+    Fetch recent history (candles, thoughts, trades) for a backtest session.
+    
+    - If the session is active in memory: returns live candles + latest thoughts from memory.
+    - Always returns persisted thoughts and trades from the database (authoritative).
+    - Candles are only available for active sessions (not persisted after completion).
+    """
+    session_id_str = str(id)
+    thoughts: List[BacktestHistoryThought] = []
+    trades_payload: List[Any] = []
+    candles_payload: List[CandleSchema] = []
+    
+    # Fast path: in-memory session (candles + latest thoughts)
+    session_state = engine.active_sessions.get(session_id_str)
+    if session_state:
+        # Candles (limited)
+        candles_slice = session_state.candles[-limit_candles:] if session_state.candles else []
+        
+        # Calculate indicators for each candle (like we do during broadcast)
+        # This ensures reconnecting users see indicators on the chart
+        candles_payload = []
+        if candles_slice and hasattr(session_state, 'indicator_calculator') and session_state.indicator_calculator:
+            # Calculate starting index for the slice in the full candles list
+            total_candles = len(session_state.candles)
+            start_idx = max(0, total_candles - len(candles_slice))
+            
+            for idx, c in enumerate(candles_slice):
+                candle_idx = start_idx + idx
+                try:
+                    # Calculate indicators for this candle
+                    indicators = session_state.indicator_calculator.calculate_all(candle_idx)
+                    candles_payload.append({
+                        "timestamp": c.timestamp,
+                        "open": c.open,
+                        "high": c.high,
+                        "low": c.low,
+                        "close": c.close,
+                        "volume": c.volume,
+                        "indicators": indicators  # Include indicators!
+                    })
+                except Exception as e:
+                    logger.warning(f"Error calculating indicators for candle {candle_idx}: {e}")
+                    # Fallback: return candle without indicators
+                    candles_payload.append({
+                        "timestamp": c.timestamp,
+                        "open": c.open,
+                        "high": c.high,
+                        "low": c.low,
+                        "close": c.close,
+                        "volume": c.volume,
+                        "indicators": {}
+                    })
+        else:
+            # No indicator calculator available, return candles without indicators
+            candles_payload = [
+                {
+                    "timestamp": c.timestamp,
+                    "open": c.open,
+                    "high": c.high,
+                    "low": c.low,
+                    "close": c.close,
+                    "volume": c.volume,
+                    "indicators": {}
+                }
+                for c in candles_slice
+            ]
+        
+        # Thoughts from memory (latest)
+        mem_thoughts = session_state.ai_thoughts[-limit_thoughts:] if session_state.ai_thoughts else []
+        for t in mem_thoughts:
+            thoughts.append(
+                BacktestHistoryThought(
+                    candle_number=t.get("candle_number", 0),
+                    timestamp=t.get("timestamp"),
+                    decision=(t.get("decision") or "").lower() if t.get("decision") else None,
+                    reasoning=t.get("reasoning"),
+                    indicator_values=t.get("indicator_values") or {},
+                    order_data=t.get("order_data"),
+                    council_stage1=t.get("council_stage1"),
+                    council_stage2=t.get("council_stage2"),
+                    council_metadata=t.get("council_metadata"),
+                )
+            )
+    
+    # Persisted thoughts from DB (authoritative)
+    thoughts_res = await db.execute(
+        select(AiThought)
+        .join(TestSession, AiThought.session_id == TestSession.id)
+        .where(AiThought.session_id == id, TestSession.user_id == current_user.id)
+        .order_by(AiThought.candle_number)
+        .limit(limit_thoughts)
+    )
+    thoughts_db = thoughts_res.scalars().all()
+    if thoughts_db:
+        thoughts = [
+            BacktestHistoryThought(
+                candle_number=t.candle_number,
+                timestamp=t.timestamp,
+                decision=t.decision,
+                reasoning=t.reasoning,
+                indicator_values=t.indicator_values or {},
+                order_data=t.order_data,
+                council_stage1=t.council_stage1,
+                council_stage2=t.council_stage2,
+                council_metadata=t.council_metadata,
+            )
+            for t in thoughts_db
+        ]
+    
+    # Trades from DB
+    trades_res = await db.execute(
+        select(Trade)
+        .join(TestSession, Trade.session_id == TestSession.id)
+        .where(Trade.session_id == id, TestSession.user_id == current_user.id)
+        .order_by(Trade.trade_number)
+        .limit(limit_trades)
+    )
+    trades_db = trades_res.scalars().all()
+    for t in trades_db:
+        trades_payload.append({
+            "trade_number": t.trade_number,
+            "type": t.type,
+            "entry_price": float(t.entry_price),
+            "exit_price": float(t.exit_price) if t.exit_price is not None else None,
+            "entry_time": t.entry_time,
+            "exit_time": t.exit_time,
+            "pnl_amount": float(t.pnl_amount) if t.pnl_amount is not None else None,
+            "pnl_pct": float(t.pnl_pct) if t.pnl_pct is not None else None,
+            "entry_reasoning": t.entry_reasoning,
+            "exit_reasoning": t.exit_reasoning,
+            "exit_type": t.exit_type,
+        })
+    
+    return BacktestHistoryResponse(
+        candles=candles_payload,
+        thoughts=thoughts,
+        trades=trades_payload,
+    )
+
 @router.post("/backtest/{id}/pause", response_model=PauseResponse)
 async def pause_backtest(
     id: UUID,
@@ -1141,6 +1293,159 @@ async def stop_backtest(
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/forward/{id}/history", response_model=ForwardHistoryResponse)
+async def get_forward_history(
+    id: UUID,
+    limit_thoughts: int = Query(200, ge=1, le=500),
+    limit_trades: int = Query(200, ge=1, le=500),
+    limit_candles: int = Query(500, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    engine: ForwardEngine = Depends(get_forward_engine)
+):
+    """
+    Fetch recent history (candles, thoughts, trades) for a forward test session.
+    
+    - If the session is active in memory: returns live candles + latest thoughts from memory.
+    - Always returns persisted thoughts and trades from the database (authoritative).
+    - Candles are only available for active sessions (not persisted after completion).
+    """
+    session_id_str = str(id)
+    thoughts: List[BacktestHistoryThought] = []
+    trades_payload: List[Any] = []
+    candles_payload: List[CandleSchema] = []
+    
+    # Fast path: in-memory session (candles + latest thoughts)
+    session_state = engine.active_sessions.get(session_id_str)
+    if session_state:
+        # Candles (limited) - forward tests track processed candles
+        candles_slice = (session_state.candles_processed[-limit_candles:] 
+                        if hasattr(session_state, 'candles_processed') and session_state.candles_processed 
+                        else [])
+        
+        # Calculate indicators for each historical candle (like we do on initialization)
+        # This ensures reconnecting users see indicators on the chart
+        candles_payload = []
+        if candles_slice and hasattr(session_state, 'indicator_calculator') and session_state.indicator_calculator:
+            # We need to calculate indicators based on the original index in the full candles list
+            # The indicator calculator was initialized with all historical candles
+            total_candles = len(session_state.candles_processed)
+            start_idx = max(0, total_candles - len(candles_slice))
+            
+            for idx, c in enumerate(candles_slice):
+                candle_idx = start_idx + idx
+                try:
+                    # Calculate indicators for this candle
+                    indicators = session_state.indicator_calculator.calculate_all(candle_idx)
+                    candles_payload.append({
+                        "timestamp": c.timestamp,
+                        "open": c.open,
+                        "high": c.high,
+                        "low": c.low,
+                        "close": c.close,
+                        "volume": c.volume,
+                        "indicators": indicators  # Include indicators!
+                    })
+                except Exception as e:
+                    logger.warning(f"Error calculating indicators for candle {candle_idx}: {e}")
+                    # Fallback: return candle without indicators
+                    candles_payload.append({
+                        "timestamp": c.timestamp,
+                        "open": c.open,
+                        "high": c.high,
+                        "low": c.low,
+                        "close": c.close,
+                        "volume": c.volume,
+                        "indicators": {}
+                    })
+        else:
+            # No indicator calculator available, return candles without indicators
+            candles_payload = [
+                {
+                    "timestamp": c.timestamp,
+                    "open": c.open,
+                    "high": c.high,
+                    "low": c.low,
+                    "close": c.close,
+                    "volume": c.volume,
+                    "indicators": {}
+                }
+                for c in candles_slice
+            ]
+        
+        # Thoughts from memory (latest)
+        mem_thoughts = session_state.ai_thoughts[-limit_thoughts:] if session_state.ai_thoughts else []
+        for t in mem_thoughts:
+            thoughts.append(
+                BacktestHistoryThought(
+                    candle_number=t.get("candle_number", 0),
+                    timestamp=t.get("timestamp"),
+                    decision=(t.get("decision") or "").lower() if t.get("decision") else None,
+                    reasoning=t.get("reasoning"),
+                    indicator_values=t.get("indicator_values") or {},
+                    order_data=t.get("order_data"),
+                    council_stage1=t.get("council_stage1"),
+                    council_stage2=t.get("council_stage2"),
+                    council_metadata=t.get("council_metadata"),
+                )
+            )
+    
+    # Persisted thoughts from DB (authoritative)
+    thoughts_res = await db.execute(
+        select(AiThought)
+        .join(TestSession, AiThought.session_id == TestSession.id)
+        .where(AiThought.session_id == id, TestSession.user_id == current_user.id)
+        .order_by(AiThought.candle_number)
+        .limit(limit_thoughts)
+    )
+    thoughts_db = thoughts_res.scalars().all()
+    if thoughts_db:
+        thoughts = [
+            BacktestHistoryThought(
+                candle_number=t.candle_number,
+                timestamp=t.timestamp,
+                decision=t.decision,
+                reasoning=t.reasoning,
+                indicator_values=t.indicator_values or {},
+                order_data=t.order_data,
+                council_stage1=t.council_stage1,
+                council_stage2=t.council_stage2,
+                council_metadata=t.council_metadata,
+            )
+            for t in thoughts_db
+        ]
+    
+    # Trades from DB
+    trades_res = await db.execute(
+        select(Trade)
+        .join(TestSession, Trade.session_id == TestSession.id)
+        .where(Trade.session_id == id, TestSession.user_id == current_user.id)
+        .order_by(Trade.trade_number)
+        .limit(limit_trades)
+    )
+    trades_db = trades_res.scalars().all()
+    for t in trades_db:
+        trades_payload.append({
+            "trade_number": t.trade_number,
+            "type": t.type,
+            "entry_price": float(t.entry_price),
+            "exit_price": float(t.exit_price) if t.exit_price is not None else None,
+            "entry_time": t.entry_time,
+            "exit_time": t.exit_time,
+            "pnl_amount": float(t.pnl_amount) if t.pnl_amount is not None else None,
+            "pnl_pct": float(t.pnl_pct) if t.pnl_pct is not None else None,
+            "entry_reasoning": t.entry_reasoning,
+            "exit_reasoning": t.exit_reasoning,
+            "exit_type": t.exit_type,
+        })
+    
+    return ForwardHistoryResponse(
+        candles=candles_payload,
+        thoughts=thoughts,
+        trades=trades_payload,
+    )
 
 
 @router.post("/forward/start", response_model=ForwardStartResponse)

@@ -670,14 +670,19 @@ class MarketDataService:
                     logger.debug(f"Error parsing CoinGecko OHLC entry: {e}, entry={entry}")
                     continue
             
-            # Filter and resample to match requested timeframe if needed
-            # For now, we'll use the data as-is since CoinGecko returns daily by default
-            # For intraday, we might need to use market_chart endpoint
-            if timeframe in ['15m', '1h', '4h']:
-                # For intraday, try market_chart endpoint
-                candles = await self._fetch_intraday_candles_coingecko(
-                    coingecko_id, timeframe, limit
-                )
+            # For intraday timeframes, try market_chart endpoint but keep OHLC as fallback
+            if timeframe in ['15m', '1h', '4h'] and len(candles) > 0:
+                try:
+                    intraday_candles = await self._fetch_intraday_candles_coingecko(
+                        coingecko_id, timeframe, limit
+                    )
+                    if intraday_candles and len(intraday_candles) > 0:
+                        candles = intraday_candles
+                    else:
+                        logger.info(f"Using OHLC data as fallback for {asset} (intraday fetch returned empty)")
+                except Exception as intraday_err:
+                    logger.warning(f"Intraday fetch failed, using OHLC data as fallback: {intraday_err}")
+                    # Keep the OHLC candles we already have
             
             # Sort by timestamp (oldest first)
             candles.sort(key=lambda c: c.timestamp)
@@ -734,17 +739,37 @@ class MarketDataService:
                 logger.warning(f"No chart data returned from CoinGecko for {coingecko_id}")
                 return []
             
-            if 'prices' not in chart_data:
-                logger.warning(f"No 'prices' key in CoinGecko response for {coingecko_id}. Keys: {chart_data.keys() if hasattr(chart_data, 'keys') else 'not a dict'}")
+            # CoinGecko SDK returns object with attributes, not dict
+            # Try accessing prices as attribute first, then as dict key
+            prices = None
+            
+            # Debug: Log what we actually received
+            logger.debug(f"CoinGecko chart_data type: {type(chart_data)}, value preview: {str(chart_data)[:200]}")
+            
+            if hasattr(chart_data, 'prices'):
+                prices = chart_data.prices
+            elif isinstance(chart_data, dict) and 'prices' in chart_data:
+                prices = chart_data['prices']
+            elif isinstance(chart_data, list) and len(chart_data) > 0:
+                # Some CoinGecko responses return list directly (e.g., OHLC format)
+                # Check if it looks like price data: [[timestamp, price], ...]
+                if isinstance(chart_data[0], (list, tuple)) and len(chart_data[0]) >= 2:
+                    logger.info(f"CoinGecko returned list format with {len(chart_data)} entries, treating as price data")
+                    prices = chart_data
+            else:
+                # Try to access as object attribute via __dict__ or similar
+                if hasattr(chart_data, '__dict__'):
+                    logger.warning(f"No 'prices' in CoinGecko response for {coingecko_id}. Type: {type(chart_data)}, attrs: {list(chart_data.__dict__.keys())[:10]}")
+                else:
+                    logger.warning(f"No 'prices' in CoinGecko response for {coingecko_id}. Type: {type(chart_data)}, repr: {repr(chart_data)[:200]}")
+                return []
+            
+            if not prices:
+                logger.warning(f"Empty prices data from CoinGecko for {coingecko_id}")
                 return []
             
             # Convert prices to candles
             # Market chart gives us prices array: [timestamp_ms, price]
-            prices = chart_data.get('prices', [])
-            
-            if not prices:
-                logger.warning(f"Empty prices array from CoinGecko for {coingecko_id}")
-                return []
             
             logger.info(f"Processing {len(prices)} price points from CoinGecko for {coingecko_id} {timeframe}")
             
@@ -974,6 +999,17 @@ class MarketDataService:
         
         # Fallback to configured sources
         preferred_sources = metadata.get('sources', ['yfinance'])
+        
+        # IMPORTANT: For intraday timeframes (15m, 1h, 4h), prioritize yfinance but keep CoinGecko as fallback
+        # yfinance is more reliable for intraday, but CoinGecko market_chart can provide fallback data
+        if timeframe in ['15m', '1h', '4h']:
+            # Ensure yfinance is first, then add coingecko if not already in list
+            sources_set = set(preferred_sources)
+            preferred_sources = ['yfinance']
+            if 'coingecko' in sources_set:
+                preferred_sources.append('coingecko')
+            logger.info(f"Intraday timeframe {timeframe} detected - trying yfinance first, then CoinGecko fallback")
+        
         last_error: Optional[Exception] = None
         
         for source in preferred_sources:
@@ -1088,6 +1124,34 @@ class MarketDataService:
             end_date.date()
         )
         
+        # For intraday timeframes, use market_chart endpoint
+        if timeframe in ['15m', '1h', '4h']:
+            duration = end_date - start_date
+            # Calculate required number of candles based on duration and timeframe
+            timeframe_minutes = {'15m': 15, '1h': 60, '4h': 240}
+            minutes = timeframe_minutes.get(timeframe, 60)
+            total_minutes = duration.total_seconds() / 60
+            limit = max(int(total_minutes / minutes) + 10, 100)  # Add buffer
+            
+            candles = await self._fetch_intraday_candles_coingecko(
+                coingecko_id, timeframe, limit
+            )
+            
+            # Filter by date range
+            candles = [c for c in candles if start_date <= c.timestamp <= end_date]
+            
+            if not candles:
+                raise Exception(
+                    f"No intraday data returned from CoinGecko for {coingecko_id} {interval} "
+                    f"from {start_date.date()} to {end_date.date()}"
+                )
+            
+            logger.info(
+                "Successfully fetched %s intraday candles from CoinGecko", len(candles)
+            )
+            return candles
+        
+        # For daily timeframe, use OHLC endpoint
         # Calculate days needed and map to allowed values
         duration = end_date - start_date
         days_int = max(1, duration.days + 1)
@@ -1305,10 +1369,27 @@ class MarketDataService:
                 )
                 cache_entries.append(entry)
             
-            # Bulk insert with conflict handling
-            # Use merge to handle duplicates (update if exists)
+            # Bulk insert with conflict handling using INSERT ... ON CONFLICT DO NOTHING
+            # This is much more efficient than merge() and properly handles duplicates
+            from sqlalchemy.dialects.postgresql import insert
+            
             for entry in cache_entries:
-                await self.db.merge(entry)
+                stmt = insert(MarketDataCache).values(
+                    asset=entry.asset,
+                    timeframe=entry.timeframe,
+                    timestamp=entry.timestamp,
+                    open=entry.open,
+                    high=entry.high,
+                    low=entry.low,
+                    close=entry.close,
+                    volume=entry.volume,
+                    indicators=entry.indicators
+                )
+                # On conflict (duplicate key), do nothing - skip the insert
+                stmt = stmt.on_conflict_do_nothing(
+                    index_elements=['asset', 'timeframe', 'timestamp']
+                )
+                await self.db.execute(stmt)
             
             await self.db.commit()
             

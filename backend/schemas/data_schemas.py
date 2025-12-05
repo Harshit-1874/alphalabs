@@ -34,6 +34,16 @@ class CandleSchema(BaseModel):
     close: float
     volume: float
 
+class CandleWithIndicatorsSchema(BaseModel):
+    """Extended candle schema that includes indicator values."""
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    indicators: Dict[str, Optional[float]] = Field(default_factory=dict)
+
 class CandleResponse(BaseModel):
     candles: List[CandleSchema]
 
