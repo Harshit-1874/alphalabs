@@ -253,7 +253,9 @@ if __name__ == '__main__':
     
     # On Windows, uvicorn reload can be problematic
     # Use explicit reload configuration to prevent crashes
-    reload_enabled = os.getenv('RELOAD', 'true').lower() == 'true'
+    # Default reload to false to avoid multiple uvicorn processes holding
+    # separate DB pools (can exhaust hosted Postgres limits during dev).
+    reload_enabled = os.getenv('RELOAD', 'false').lower() == 'true'
     
     if reload_enabled:
         # Get the backend directory path

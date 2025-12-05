@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     # Database Configuration
     DATABASE_URL: str
     DB_CONNECTION_STRING: Optional[str] = None
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 5
     
     # Supabase Configuration
     SUPABASE_URL: str

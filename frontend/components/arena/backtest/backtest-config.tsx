@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { History, Zap, Bot, Clock, DollarSign, Shield, TrendingUp, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { History, Zap, Bot, Clock, DollarSign, Shield, TrendingUp, Info, ChevronDown, ChevronUp, Brain, Sparkles, X, Check } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ import { useAgentsStore, useArenaStore } from "@/lib/stores";
 import { useArenaCatalogs } from "@/hooks/use-arena-catalogs";
 import { useArenaApi } from "@/hooks/use-arena-api";
 import { useAgents } from "@/hooks/use-agents";
+import { useModels } from "@/hooks/use-models";
+import { CouncilModeBanner } from "@/components/arena/council-mode-banner";
 
 export function BacktestConfig() {
   const router = useRouter();
@@ -33,6 +35,13 @@ export function BacktestConfig() {
   const { assets, timeframes, datePresets, playbackSpeeds, isLoading, error: catalogError } =
     useArenaCatalogs();
   const { startBacktest } = useArenaApi();
+  const { models: allModels } = useModels();
+  
+  // Filter to only free models for council mode
+  const freeModels = useMemo(() => 
+    allModels.filter(m => m.isFree).sort((a, b) => a.name.localeCompare(b.name)),
+    [allModels]
+  );
 
   const [config, setConfig] = useState({
     agentId: preselectedAgent || "",
@@ -48,10 +57,24 @@ export function BacktestConfig() {
     decisionMode: "every_candle" as "every_candle" | "every_n_candles",
     decisionInterval: "1",
     indicatorReadinessThreshold: "80", // Percentage of indicators that must be ready
+    // Council Mode - IMPORTANT: councilModels are ADDITIONAL models (bot's model is auto-included)
+    councilMode: false,
+    councilModels: [] as string[], // Additional models to join the bot's model
+    councilChairmanModel: "",
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCouncilBanner, setShowCouncilBanner] = useState(true);
+  const [showCouncilConfig, setShowCouncilConfig] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Default free council models (excluding the bot's model - it's auto-included)
+  const DEFAULT_ADDITIONAL_MODELS = [
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "google/gemma-3-27b-it:free"
+  ];
+  // Default chairman - use Hermes 405B for synthesis (large model, good at reasoning)
+  const DEFAULT_CHAIRMAN = "nousresearch/hermes-3-llama-3.1-405b:free";
 
   useEffect(() => {
     if (!config.asset && assets.length) {
@@ -93,6 +116,14 @@ export function BacktestConfig() {
       setFormError("Start date must be before end date.");
       return;
     }
+    if (config.councilMode && (!config.councilModels || config.councilModels.length < 1)) {
+      setFormError("Council mode requires at least 1 additional model selected.");
+      return;
+    }
+    if (config.councilMode && !config.councilChairmanModel) {
+      setFormError("Please select a chairman model for the council.");
+      return;
+    }
     setFormError(null);
     setIsSubmitting(true);
     try {
@@ -110,6 +141,9 @@ export function BacktestConfig() {
         decision_mode: config.decisionMode,
         decision_interval_candles: Number(config.decisionInterval || "1"),
         indicator_readiness_threshold: Number(config.indicatorReadinessThreshold || "80"),
+        council_mode: config.councilMode,
+        council_models: config.councilMode ? config.councilModels : null,
+        council_chairman_model: config.councilMode ? config.councilChairmanModel : null,
       });
 
       setBacktestConfig({
@@ -125,6 +159,9 @@ export function BacktestConfig() {
         decisionIntervalCandles: Number(config.decisionInterval || "1"),
         safetyMode: config.safetyMode,
         allowLeverage: config.allowLeverage,
+        councilMode: config.councilMode,
+        councilModels: config.councilModels,
+        councilChairmanModel: config.councilChairmanModel,
       });
       
       if (session.previewCandles?.length) {
@@ -189,6 +226,23 @@ export function BacktestConfig() {
             </p>
         </div>
       </div>
+
+      {/* Council Mode Promotional Banner */}
+      {showCouncilBanner && !config.councilMode && (
+        <CouncilModeBanner
+          onEnableCouncilMode={() => {
+            setConfig(prev => ({
+              ...prev,
+              councilMode: true,
+              councilModels: DEFAULT_ADDITIONAL_MODELS,
+              councilChairmanModel: DEFAULT_CHAIRMAN
+            }));
+            setShowCouncilConfig(true);
+            setShowCouncilBanner(false);
+          }}
+          onDismiss={() => setShowCouncilBanner(false)}
+        />
+      )}
 
       <div className="space-y-4">
           {/* Step 1: Select Agent */}
@@ -499,6 +553,190 @@ export function BacktestConfig() {
                   </div>
                 </div>
               )}
+
+              {/* Council Mode Section */}
+              <div className="space-y-2 rounded-lg border-2 border-purple-500/30 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-purple-500/5 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="council-mode"
+                      checked={config.councilMode}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked as boolean;
+                        setConfig(prev => ({
+                          ...prev,
+                          councilMode: enabled,
+                          // Set sensible defaults when enabling, clear when disabling
+                          councilModels: enabled ? DEFAULT_ADDITIONAL_MODELS : [],
+                          councilChairmanModel: enabled ? DEFAULT_CHAIRMAN : ""
+                        }));
+                        setShowCouncilConfig(enabled);
+                      }}
+                    />
+                    <Label htmlFor="council-mode" className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                      <Brain className="h-4 w-4 text-purple-400" />
+                      Council Mode
+                      <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-4 bg-purple-500/20 text-purple-400 border-purple-500/30">
+                        EXPERIMENTAL
+                      </Badge>
+                    </Label>
+                  </div>
+                  {config.councilMode && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCouncilConfig(!showCouncilConfig)}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {showCouncilConfig ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Your bot's AI model collaborates with additional models to reach consensus decisions through debate and voting.
+                </p>
+
+                {config.councilMode && showCouncilConfig && (
+                  <div className="space-y-3 pt-2 border-t border-purple-500/20">
+                    {/* Show Bot's Model as Lead */}
+                    {selectedAgent && (
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1.5">
+                          <Bot className="h-3 w-3 text-purple-400" />
+                          Lead Model (Your Bot)
+                        </Label>
+                        <Badge
+                          variant="secondary"
+                          className="text-[9px] px-2 py-1 bg-purple-500/20 text-purple-300 border-purple-500/30 font-semibold"
+                        >
+                          {selectedAgent.model.split('/')[1]?.split(':')[0] || selectedAgent.model}
+                        </Badge>
+                        <p className="text-[9px] text-muted-foreground">
+                          Your bot's configured model leads the council
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Council Members Multi-Select */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1.5">
+                        <Brain className="h-3 w-3 text-blue-400" />
+                        Additional Council Members ({config.councilModels.length}/3)
+                      </Label>
+                      
+                      {/* Selected models as removable badges */}
+                      {config.councilModels.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1.5">
+                          {config.councilModels.map((modelId) => {
+                            const model = freeModels.find(m => m.id === modelId);
+                            return (
+                              <Badge
+                                key={modelId}
+                                variant="secondary"
+                                className="text-[9px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border-blue-500/20 flex items-center gap-1"
+                              >
+                                {model?.name.replace(' (Free)', '') || modelId.split('/')[1]?.split(':')[0] || modelId}
+                                <button
+                                  type="button"
+                                  onClick={() => setConfig(prev => ({
+                                    ...prev,
+                                    councilModels: prev.councilModels.filter(m => m !== modelId)
+                                  }))}
+                                  className="hover:text-blue-200 ml-0.5"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      {/* Dropdown to add models */}
+                      {config.councilModels.length < 3 && (
+                        <AnimatedSelect
+                          value=""
+                          onValueChange={(value) => {
+                            if (value && !config.councilModels.includes(value)) {
+                              setConfig(prev => ({
+                                ...prev,
+                                councilModels: [...prev.councilModels, value].slice(0, 3)
+                              }));
+                            }
+                          }}
+                        >
+                          <AnimatedSelectTrigger className="h-7 text-[10px]">
+                            <AnimatedSelectValue placeholder="+ Add council member..." />
+                          </AnimatedSelectTrigger>
+                          <AnimatedSelectContent>
+                            {freeModels
+                              .filter(m => !config.councilModels.includes(m.id) && m.id !== selectedAgent?.model)
+                              .map((model) => (
+                                <AnimatedSelectItem key={model.id} value={model.id} textValue={model.name}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px]">{model.name.replace(' (Free)', '')}</span>
+                                    <span className="text-[9px] text-muted-foreground">{model.provider}</span>
+                                  </div>
+                                </AnimatedSelectItem>
+                              ))}
+                          </AnimatedSelectContent>
+                        </AnimatedSelect>
+                      )}
+                      
+                      <p className="text-[9px] text-muted-foreground">
+                        {config.councilModels.length + 1} total models (including your bot) • Max 3 additional • Free-tier only
+                      </p>
+                    </div>
+                    
+                    {/* Chairman Select */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1.5">
+                        <Sparkles className="h-3 w-3 text-amber-400" />
+                        Chairman (Final Synthesizer)
+                      </Label>
+                      <AnimatedSelect
+                        value={config.councilChairmanModel}
+                        onValueChange={(value) => setConfig(prev => ({ ...prev, councilChairmanModel: value }))}
+                      >
+                        <AnimatedSelectTrigger className="h-7 text-[10px]">
+                          <AnimatedSelectValue placeholder="Select chairman model..." />
+                        </AnimatedSelectTrigger>
+                        <AnimatedSelectContent>
+                          {freeModels.map((model) => (
+                            <AnimatedSelectItem key={model.id} value={model.id} textValue={model.name}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px]">{model.name.replace(' (Free)', '')}</span>
+                                {config.councilModels.includes(model.id) && (
+                                  <Badge variant="outline" className="text-[8px] px-1 py-0 h-3">council</Badge>
+                                )}
+                                {model.id === selectedAgent?.model && (
+                                  <Badge variant="outline" className="text-[8px] px-1 py-0 h-3 text-purple-400 border-purple-400/30">bot</Badge>
+                                )}
+                              </div>
+                            </AnimatedSelectItem>
+                          ))}
+                        </AnimatedSelectContent>
+                      </AnimatedSelect>
+                      <p className="text-[9px] text-muted-foreground">
+                        The chairman reviews all responses and synthesizes the final decision
+                      </p>
+                    </div>
+
+                    <div className="flex items-start gap-1.5 rounded-md bg-amber-500/5 border border-amber-500/20 p-2 mt-2">
+                      <Info className="h-3 w-3 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-[9px] text-amber-600 dark:text-amber-400 leading-tight">
+                          <strong>How it works:</strong> Your bot's model + {config.councilModels.length} additional models each analyze independently → 
+                          rank each other's decisions → chairman synthesizes final verdict.
+                        </p>
+                        <p className="text-[9px] text-amber-600 dark:text-amber-400 leading-tight">
+                          ⚠️ Takes 3-5x longer due to multiple LLM calls. Max 3 models recommended to avoid rate limits.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-1.5">
                 <div className="flex items-center space-x-2">

@@ -417,6 +417,11 @@ class CandleProcessor:
             )
         
         # Store AI thought
+        # Extract council deliberation (if council mode decision)
+        council_deliberation = None
+        if decision.decision_context and isinstance(decision.decision_context, dict):
+            council_deliberation = decision.decision_context.get("council_deliberation")
+
         ai_thought = {
             "candle_number": candle_index,
             "timestamp": candle.timestamp,
@@ -438,7 +443,15 @@ class CandleProcessor:
                 "leverage": decision.leverage,
             }
             if decision.action in ["LONG", "SHORT"]
-            else None
+            else None,
+            # Council deliberation details for persistence
+            "council_stage1": council_deliberation.get("stage1") if council_deliberation else None,
+            "council_stage2": council_deliberation.get("stage2") if council_deliberation else None,
+            "council_metadata": {
+                "aggregate_rankings": council_deliberation.get("aggregate_rankings"),
+                "label_to_model": council_deliberation.get("label_to_model"),
+                "stage3": council_deliberation.get("stage3"),
+            } if council_deliberation else None,
         }
         session_state.ai_thoughts.append(ai_thought)
         

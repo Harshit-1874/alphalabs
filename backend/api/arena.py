@@ -911,6 +911,9 @@ async def start_backtest(
         decision_interval_candles=request.decision_interval_candles,
         indicator_readiness_threshold=request.indicator_readiness_threshold or 80.0,
         user_id=str(current_user.id),
+        council_mode=request.council_mode,
+        council_models=request.council_models,
+        council_chairman_model=request.council_chairman_model,
     )
 
     preview_candles = None
@@ -955,6 +958,9 @@ async def start_backtest(
             decision_interval_candles=request.decision_interval_candles,
             safety_mode=request.safety_mode,
             allow_leverage=request.allow_leverage,
+            council_mode=request.council_mode,
+            council_models=request.council_models,
+            council_chairman_model=request.council_chairman_model,
             preview_candles=preview_candles,
         ),
         "message": "Backtest session created"

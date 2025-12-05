@@ -17,6 +17,10 @@ interface BacktestStartPayload {
   decision_mode: "every_candle" | "every_n_candles";
   decision_interval_candles: number;
   indicator_readiness_threshold?: number;
+  // Council Mode
+  council_mode?: boolean;
+  council_models?: string[] | null;
+  council_chairman_model?: string | null;
 }
 
 interface ForwardStartPayload {
@@ -57,6 +61,10 @@ interface BacktestSessionDto {
   preview_candles?: CandleDto[] | null;
   decision_mode?: string | null;
   decision_interval_candles?: number | null;
+  // Council Mode
+  council_mode?: boolean;
+  council_models?: string[] | null;
+  council_chairman_model?: string | null;
 }
 
 interface BacktestSession extends BacktestSessionDto {

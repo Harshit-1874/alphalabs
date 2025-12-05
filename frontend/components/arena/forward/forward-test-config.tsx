@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Play, Bot, DollarSign, Shield, Bell, CheckCircle, XCircle, ArrowRight } from "lucide-react";
+import { Play, Bot, DollarSign, Shield, Bell, CheckCircle, XCircle, ArrowRight, Info, Brain } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import {
   AnimatedSelectValue,
 } from "@/components/ui/animated-select";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { useAgentsStore, useArenaStore } from "@/lib/stores";
 import { useApiClient } from "@/lib/api";
@@ -161,6 +162,28 @@ export function ForwardTestConfig() {
           {configError}
         </div>
       )}
+
+      {/* Council Mode Coming Soon Banner */}
+      <Alert className="border-purple-500/20 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-purple-500/5">
+        <Brain className="h-4 w-4 text-purple-400" />
+        <AlertDescription className="text-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="font-semibold text-foreground">🧠 Council Mode for Forward Testing</span>
+              <span className="text-muted-foreground"> — Coming Soon!</span>
+            </div>
+            <Link href="/dashboard/arena/backtest">
+              <Button variant="outline" size="sm" className="ml-4 border-purple-500/30 hover:bg-purple-500/10">
+                Try it in Backtest
+                <ArrowRight className="ml-2 h-3 w-3" />
+              </Button>
+            </Link>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Multiple AI models will soon collaborate on live trading decisions for more robust analysis.
+          </p>
+        </AlertDescription>
+      </Alert>
 
       {/* Agent Selection - Compact */}
       <Card className="border-border/50 bg-gradient-to-r from-[hsl(var(--accent-green)/0.05)] to-transparent">

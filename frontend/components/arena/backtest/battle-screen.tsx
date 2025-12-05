@@ -217,6 +217,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         if (event.data) {
           const candleIndexFromEvent =
             typeof event.data.candle_index === "number" ? event.data.candle_index : currentCandle;
+          const councilDeliberation = event.data.decision_context?.council_deliberation;
           const thought: AIThought = {
             id: `thought-${Date.now()}`,
             timestamp: new Date(),
@@ -229,6 +230,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
               typeof event.data.decision_context?.interval === "number"
                 ? event.data.decision_context.interval
                 : undefined,
+            councilDeliberation: councilDeliberation,
           };
           addThought(sessionId, thought);
 
@@ -854,6 +856,58 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         </span>
       </div>
       <p className="text-xs text-muted-foreground leading-relaxed">{thought.content}</p>
+
+      {thought.councilDeliberation && (
+        <div className="mt-2 space-y-2 rounded border border-border/40 bg-muted/10 p-2">
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <Badge variant="outline" className="h-4 text-[9px]">Council</Badge>
+            <span>Multi-model decision</span>
+          </div>
+
+          {/* Stage 1: Individual responses */}
+          {thought.councilDeliberation.stage1?.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-medium text-foreground">Stage 1 • Individual opinions</p>
+              <div className="space-y-1">
+                {thought.councilDeliberation.stage1.map((resp, idx) => (
+                  <div
+                    key={`${resp.model}-${idx}`}
+                    className="rounded border border-border/40 bg-card/30 px-2 py-1.5"
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="secondary" className="h-4 text-[9px]">
+                        {resp.model.split("/")[1]?.split(":")[0] || resp.model}
+                      </Badge>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground line-clamp-3">
+                      {resp.response || "No response"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Stage 2 summary */}
+          {thought.councilDeliberation.stage2?.length > 0 && (
+            <div className="text-[10px] text-muted-foreground">
+              Stage 2 • Rankings collected from {thought.councilDeliberation.stage2.length} model
+              {thought.councilDeliberation.stage2.length === 1 ? "" : "s"}
+            </div>
+          )}
+
+          {/* Stage 3: Chairman decision */}
+          {thought.councilDeliberation.stage3 && (
+            <div className="text-[10px] text-muted-foreground">
+              Stage 3 • Chairman:{" "}
+              <Badge variant="outline" className="h-4 text-[9px]">
+                {thought.councilDeliberation.stage3.model.split("/")[1]?.split(":")[0] ||
+                  thought.councilDeliberation.stage3.model}
+              </Badge>
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 

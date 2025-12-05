@@ -162,6 +162,24 @@ class TestSession(Base, UUIDMixin, TimestampMixin):
         comment="Interval between LLM decisions when using every_n_candles"
     )
     
+    # Council Mode Configuration
+    council_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        server_default="false",
+        nullable=False,
+        comment="Whether council mode (multi-LLM deliberation) is enabled"
+    )
+    
+    council_models: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        comment="Array of model IDs participating in council deliberation"
+    )
+    
+    council_chairman_model: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        comment="Model ID for chairman that synthesizes final decision"
+    )
+    
     total_candles: Mapped[Optional[int]] = mapped_column(
         Integer,
         comment="Total number of candles in backtest"
@@ -559,6 +577,22 @@ class AiThought(Base, UUIDMixin):
     order_data: Mapped[Optional[dict]] = mapped_column(
         JSONB,
         comment="Order details if an order was generated"
+    )
+    
+    # Council Deliberation Data (for multi-LLM council mode)
+    council_stage1: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        comment="Stage 1: Individual responses from all council models"
+    )
+    
+    council_stage2: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        comment="Stage 2: Peer rankings of decisions"
+    )
+    
+    council_metadata: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        comment="Council metadata (aggregate rankings, label mappings, etc.)"
     )
     
     # Timestamp
