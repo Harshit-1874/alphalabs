@@ -36,6 +36,7 @@ import httpx
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 import yfinance as yf
+from coingecko_sdk import Coingecko
 
 from models import MarketDataCache
 from config import settings
@@ -88,23 +89,23 @@ class MarketDataService:
     ASSET_CATALOG: Dict[str, Dict[str, Any]] = {
         'BTC/USDT': {
             'ticker': 'BTC-USD',
-            'binance_symbol': 'BTCUSDT',
+            'coingecko_id': 'bitcoin',
             'name': 'Bitcoin',
             'icon': '₿',
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 720,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
         },
         'ETH/USDT': {
             'ticker': 'ETH-USD',
-            'binance_symbol': 'ETHUSDT',
+            'coingecko_id': 'ethereum',
             'name': 'Ethereum',
             'icon': 'Ξ',
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 720,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
         },
         'SOL/USDT': {
             'name': 'Solana',
@@ -112,9 +113,9 @@ class MarketDataService:
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 365,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
             'ticker': 'SOL-USD',
-            'binance_symbol': 'SOLUSDT',
+            'coingecko_id': 'solana',
         },
         'XRP/USDT': {
             'name': 'XRP',
@@ -122,9 +123,9 @@ class MarketDataService:
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 365,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
             'ticker': 'XRP-USD',
-            'binance_symbol': 'XRPUSDT',
+            'coingecko_id': 'ripple',
         },
         'ADA/USDT': {
             'name': 'Cardano',
@@ -132,9 +133,9 @@ class MarketDataService:
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 365,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
             'ticker': 'ADA-USD',
-            'binance_symbol': 'ADAUSDT',
+            'coingecko_id': 'cardano',
         },
         'DOGE/USDT': {
             'name': 'Dogecoin',
@@ -142,19 +143,19 @@ class MarketDataService:
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 365,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
             'ticker': 'DOGE-USD',
-            'binance_symbol': 'DOGEUSDT',
+            'coingecko_id': 'dogecoin',
         },
         'BNB/USDT': {
             'ticker': 'BNB-USD',
-            'binance_symbol': 'BNBUSDT',
+            'coingecko_id': 'binancecoin',
             'name': 'Binance Coin',
             'icon': 'Ɓ',
             'available': True,
             'min_lookback_days': 7,
             'max_lookback_days': 365,
-            'sources': ['binance', 'yfinance'],
+            'sources': ['coingecko', 'yfinance'],
         },
     }
     ASSET_TICKER_MAP = {
@@ -162,10 +163,10 @@ class MarketDataService:
         for asset, meta in ASSET_CATALOG.items()
         if meta.get('ticker')
     }
-    ASSET_BINANCE_MAP = {
-        asset: meta['binance_symbol']
+    ASSET_COINGECKO_MAP = {
+        asset: meta['coingecko_id']
         for asset, meta in ASSET_CATALOG.items()
-        if meta.get('binance_symbol')
+        if meta.get('coingecko_id')
     }
     
     TIMEFRAME_CATALOG: Dict[str, Dict[str, Any]] = {
@@ -243,8 +244,24 @@ class MarketDataService:
         """
         self.db = db
         self.memory_cache: Dict[str, List[Candle]] = {}
-        
-        logger.info("MarketDataService initialized")
+        # Initialize CoinGecko with API key
+        # CoinGecko requires an API key even for free Demo plan (30 calls/min, 10k calls/month)
+        # Get your free API key from: https://www.coingecko.com/en/api/pricing
+        api_key = getattr(settings, 'COINGECKO_API_KEY', None)
+        if api_key:
+            # CoinGecko SDK uses demo_api_key for free tier, pro_api_key for paid plans
+            # Demo API requires base_url to be api.coingecko.com (not pro-api.coingecko.com)
+            self.coingecko = Coingecko(
+                demo_api_key=api_key,
+                base_url='https://api.coingecko.com/api/v3'
+            )
+            logger.info("MarketDataService initialized with CoinGecko API key (demo)")
+        else:
+            # CoinGecko SDK requires an API key - cannot work without it
+            raise ValueError(
+                "COINGECKO_API_KEY is required. "
+                "Get your free API key from: https://www.coingecko.com/en/api/pricing"
+            )
     
     def _generate_cache_key(
         self,
@@ -448,9 +465,9 @@ class MarketDataService:
     
     async def get_current_price(self, asset: str) -> Optional[Dict[str, float]]:
         """
-        Get the current real-time price for an asset from Binance API.
+        Get the current real-time price for an asset from CoinGecko API.
         
-        Uses Binance REST API for live market data.
+        Uses CoinGecko REST API for live market data.
         
         Args:
             asset: Trading asset (e.g., 'BTC/USDT')
@@ -465,137 +482,304 @@ class MarketDataService:
                 'change_pct_24h': float
             } or None if unavailable
         """
-        # Get Binance symbol (e.g., BTC/USDT -> BTCUSDT)
+        # Get CoinGecko ID (e.g., BTC/USDT -> bitcoin)
         asset_info = self.ASSET_CATALOG.get(asset.upper())
         if not asset_info:
             logger.warning(f"Unknown asset: {asset}")
             return None
         
-        binance_symbol = asset_info.get('binance_symbol')
-        if not binance_symbol:
-            logger.warning(f"No Binance symbol for {asset}")
+        coingecko_id = asset_info.get('coingecko_id')
+        if not coingecko_id:
+            logger.warning(f"No CoinGecko ID for {asset}")
             return None
         
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                # Binance 24hr ticker endpoint
-                response = await client.get(
-                    "https://api.binance.com/api/v3/ticker/24hr",
-                    params={"symbol": binance_symbol}
+            # CoinGecko simple/price endpoint
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def fetch_price_sync():
+                return self.coingecko.simple.price.get(
+                    ids=coingecko_id,  # String, not list
+                    vs_currencies='usd',  # String, not list
+                    include_24hr_change=True,
+                    include_24hr_vol=True
                 )
-                response.raise_for_status()
-                data = response.json()
-                
-                # Log the full ticker response for debugging
-                logger.info(
-                    f"Binance ticker response for {asset} ({binance_symbol}): {data}"
-                )
-                
-                current_price = float(data.get("lastPrice", 0))
-                if current_price == 0:
-                    raise ValueError("Invalid price from Binance")
-                
-                high_24h = float(data.get("highPrice", current_price))
-                low_24h = float(data.get("lowPrice", current_price))
-                volume_24h = float(data.get("volume", 0))
-                price_change = float(data.get("priceChange", 0))
-                price_change_pct = float(data.get("priceChangePercent", 0))
-                
-                return {
-                    'price': current_price,
-                    'high_24h': high_24h,
-                    'low_24h': low_24h,
-                    'volume_24h': volume_24h,
-                    'change_24h': price_change,
-                    'change_pct_24h': price_change_pct,
-                }
+            
+            data = await asyncio.wait_for(
+                loop.run_in_executor(None, fetch_price_sync),
+                timeout=5.0
+            )
+            
+            # Response format: dict with coin_id as key, containing price data
+            if not data or not hasattr(data, coingecko_id):
+                # Try accessing as dict
+                if isinstance(data, dict) and coingecko_id not in data:
+                    raise ValueError(f"No price data from CoinGecko for {coingecko_id}")
+                coin_data = getattr(data, coingecko_id, None) or data.get(coingecko_id, {})
+            else:
+                coin_data = getattr(data, coingecko_id, {})
+            
+            # Access price - could be attribute or dict key
+            if hasattr(coin_data, 'usd'):
+                current_price = float(coin_data.usd)
+                high_24h = float(getattr(coin_data, 'usd_24h_high', current_price))
+                low_24h = float(getattr(coin_data, 'usd_24h_low', current_price))
+                volume_24h = float(getattr(coin_data, 'usd_24h_vol', 0))
+                change_pct_24h = float(getattr(coin_data, 'usd_24h_change', 0))
+            else:
+                current_price = float(coin_data.get('usd', 0))
+                high_24h = float(coin_data.get('usd_24h_high', current_price))
+                low_24h = float(coin_data.get('usd_24h_low', current_price))
+                volume_24h = float(coin_data.get('usd_24h_vol', 0))
+                change_pct_24h = float(coin_data.get('usd_24h_change', 0))
+            
+            if current_price == 0:
+                raise ValueError("Invalid price from CoinGecko")
+            
+            change_24h = current_price * (change_pct_24h / 100) if change_pct_24h else 0
+            
+            logger.info(
+                f"CoinGecko price response for {asset} ({coingecko_id}): price={current_price}"
+            )
+            
+            return {
+                'price': current_price,
+                'high_24h': high_24h,
+                'low_24h': low_24h,
+                'volume_24h': volume_24h,
+                'change_24h': change_24h,
+                'change_pct_24h': change_pct_24h,
+            }
         except Exception as e:
-            logger.error(f"Error fetching current price from Binance for {asset}: {e}")
+            logger.error(f"Error fetching current price from CoinGecko for {asset}: {e}")
             return None
     
-    async def get_historical_candles_binance(
+    async def get_historical_candles_coingecko(
         self,
         asset: str,
         timeframe: str,
         limit: int = 500
     ) -> List[Candle]:
         """
-        Fetch historical candles from Binance API.
+        Fetch historical candles from CoinGecko API.
         
         Args:
             asset: Trading asset (e.g., 'BTC/USDT')
             timeframe: Timeframe (e.g., '1h', '15m', '1d')
-            limit: Number of candles to fetch (max 1000, default: 500)
+            limit: Number of candles to fetch (default: 500)
             
         Returns:
             List of Candle objects sorted by timestamp (oldest first)
         """
-        # Get Binance symbol and interval
+        # Get CoinGecko ID
         asset_info = self.ASSET_CATALOG.get(asset.upper())
         if not asset_info:
             logger.warning(f"Unknown asset: {asset}")
             return []
         
-        binance_symbol = asset_info.get('binance_symbol')
-        if not binance_symbol:
-            logger.warning(f"No Binance symbol for {asset}")
+        coingecko_id = asset_info.get('coingecko_id')
+        if not coingecko_id:
+            logger.warning(f"No CoinGecko ID for {asset}")
             return []
         
-        # Map timeframe to Binance interval
-        interval_map = {
-            '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
-            '1h': '1h', '2h': '2h', '4h': '4h', '6h': '6h', '8h': '8h', '12h': '12h',
-            '1d': '1d', '3d': '3d', '1w': '1w', '1M': '1M'
-        }
-        binance_interval = interval_map.get(timeframe.lower(), '1h')
+        # Map timeframe to CoinGecko interval (days)
+        # CoinGecko OHLC endpoint supports: '1', '7', '14', '30', '90', '180', '365', 'max'
+        # We'll calculate days based on timeframe and limit, then map to allowed values
+        def map_days_to_allowed(days_int: int) -> str:
+            """Map integer days to closest allowed CoinGecko days value."""
+            allowed = [1, 7, 14, 30, 90, 180, 365]
+            if days_int <= 1:
+                return '1'
+            elif days_int <= 7:
+                return '7'
+            elif days_int <= 14:
+                return '14'
+            elif days_int <= 30:
+                return '30'
+            elif days_int <= 90:
+                return '90'
+            elif days_int <= 180:
+                return '180'
+            elif days_int <= 365:
+                return '365'
+            else:
+                return 'max'
+        
+        # Calculate days needed based on timeframe and limit
+        if timeframe == '15m':
+            days_int = max(1, (limit // 96) + 1)
+        elif timeframe == '1h':
+            days_int = max(1, (limit // 24) + 1)
+        elif timeframe == '4h':
+            days_int = max(7, (limit // 6) + 1)
+        elif timeframe == '1d':
+            days_int = min(365, max(90, limit))
+        else:
+            days_int = 7
+        
+        days = map_days_to_allowed(days_int)
         
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # Binance klines endpoint
-                response = await client.get(
-                    "https://api.binance.com/api/v3/klines",
-                    params={
-                        "symbol": binance_symbol,
-                        "interval": binance_interval,
-                        "limit": min(limit, 1000)  # Binance max is 1000
-                    }
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def fetch_ohlc_sync():
+                return self.coingecko.coins.ohlc.get(
+                    id=coingecko_id,
+                    vs_currency='usd',
+                    days=days  # Must be string: '1', '7', '14', '30', '90', '180', '365', 'max'
                 )
-                response.raise_for_status()
-                klines = response.json()
-                
-                if not klines:
-                    logger.warning(f"No historical data from Binance for {asset}")
-                    return []
-                
-                # Convert Binance klines to Candle objects
-                # Binance format: [open_time, open, high, low, close, volume, close_time, ...]
-                candles = []
-                for kline in klines:
-                    try:
-                        open_time_ms = int(kline[0])
-                        timestamp = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc)
+            
+            ohlc_data = await asyncio.wait_for(
+                loop.run_in_executor(None, fetch_ohlc_sync),
+                timeout=30.0
+            )
+            
+            if not ohlc_data:
+                logger.warning(f"No historical data from CoinGecko for {asset}")
+                return []
+            
+            # CoinGecko OHLC format: list of [timestamp_ms, open, high, low, close]
+            # Convert to list if it's not already iterable
+            if not isinstance(ohlc_data, (list, tuple)):
+                # Try to convert response object to list
+                try:
+                    ohlc_data = list(ohlc_data) if hasattr(ohlc_data, '__iter__') else []
+                except:
+                    ohlc_data = []
+            
+            candles = []
+            for entry in ohlc_data:
+                try:
+                    # Entry format: [timestamp_ms, open, high, low, close]
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 5:
+                        timestamp_ms = int(entry[0])
+                        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
                         
                         candle = Candle(
                             timestamp=timestamp,
-                            open=float(kline[1]),
-                            high=float(kline[2]),
-                            low=float(kline[3]),
-                            close=float(kline[4]),
-                            volume=float(kline[5])
+                            open=float(entry[1]),
+                            high=float(entry[2]),
+                            low=float(entry[3]),
+                            close=float(entry[4]),
+                            volume=0.0  # CoinGecko OHLC doesn't include volume
                         )
                         candles.append(candle)
-                    except Exception as e:
-                        logger.debug(f"Error parsing Binance kline: {e}")
-                        continue
-                
-                # Sort by timestamp (oldest first) - Binance already returns sorted, but just in case
-                candles.sort(key=lambda c: c.timestamp)
-                
-                logger.info(f"Fetched {len(candles)} historical candles from Binance for {asset} {timeframe}")
-                return candles
+                except Exception as e:
+                    logger.debug(f"Error parsing CoinGecko OHLC entry: {e}, entry={entry}")
+                    continue
+            
+            # Filter and resample to match requested timeframe if needed
+            # For now, we'll use the data as-is since CoinGecko returns daily by default
+            # For intraday, we might need to use market_chart endpoint
+            if timeframe in ['15m', '1h', '4h']:
+                # For intraday, try market_chart endpoint
+                candles = await self._fetch_intraday_candles_coingecko(
+                    coingecko_id, timeframe, limit
+                )
+            
+            # Sort by timestamp (oldest first)
+            candles.sort(key=lambda c: c.timestamp)
+            
+            # Limit to requested number
+            candles = candles[-limit:] if len(candles) > limit else candles
+            
+            logger.info(f"Fetched {len(candles)} historical candles from CoinGecko for {asset} {timeframe}")
+            return candles
                 
         except Exception as e:
-            logger.error(f"Error fetching historical data from Binance for {asset}: {e}")
+            logger.error(f"Error fetching historical data from CoinGecko for {asset}: {e}")
+            return []
+    
+    async def _fetch_intraday_candles_coingecko(
+        self,
+        coingecko_id: str,
+        timeframe: str,
+        limit: int
+    ) -> List[Candle]:
+        """Fetch intraday candles using CoinGecko market_chart endpoint."""
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            # Calculate days needed based on timeframe and limit
+            if timeframe == '15m':
+                days = max(1, (limit * 15) // (24 * 60) + 1)
+            elif timeframe == '1h':
+                days = max(1, (limit // 24) + 1)
+            elif timeframe == '4h':
+                days = max(1, (limit // 6) + 1)
+            else:
+                days = 1
+            
+            def fetch_market_chart_sync():
+                return self.coingecko.coins.market_chart.get(
+                    id=coingecko_id,
+                    vs_currency='usd',
+                    days=min(days, 1)  # Market chart max 1 day for free tier
+                )
+            
+            chart_data = await asyncio.wait_for(
+                loop.run_in_executor(None, fetch_market_chart_sync),
+                timeout=30.0
+            )
+            
+            if not chart_data or 'prices' not in chart_data:
+                return []
+            
+            # Convert prices to candles
+            # Market chart gives us prices array: [timestamp_ms, price]
+            prices = chart_data.get('prices', [])
+            
+            if not prices:
+                return []
+            
+            # Group prices by timeframe interval
+            candles = []
+            interval_ms = self.TIMEFRAME_INTERVAL_MS.get(timeframe.lower(), 60 * 60 * 1000)
+            
+            current_bucket_start = None
+            current_candle = None
+            
+            for price_entry in prices:
+                timestamp_ms = int(price_entry[0])
+                price = float(price_entry[1])
+                timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+                
+                # Calculate bucket start time
+                bucket_start_ms = (timestamp_ms // interval_ms) * interval_ms
+                
+                if current_bucket_start != bucket_start_ms:
+                    # Save previous candle if exists
+                    if current_candle:
+                        candles.append(current_candle)
+                    
+                    # Start new candle
+                    current_bucket_start = bucket_start_ms
+                    current_candle = Candle(
+                        timestamp=datetime.fromtimestamp(bucket_start_ms / 1000, tz=timezone.utc),
+                        open=price,
+                        high=price,
+                        low=price,
+                        close=price,
+                        volume=0.0
+                    )
+                else:
+                    # Update current candle
+                    if current_candle:
+                        current_candle.high = max(current_candle.high, price)
+                        current_candle.low = min(current_candle.low, price)
+                        current_candle.close = price
+            
+            # Add last candle
+            if current_candle:
+                candles.append(current_candle)
+            
+            return candles[-limit:] if len(candles) > limit else candles
+            
+        except Exception as e:
+            logger.error(f"Error fetching intraday candles from CoinGecko: {e}")
             return []
     
     async def get_latest_candle(
@@ -604,9 +788,9 @@ class MarketDataService:
         timeframe: str
     ) -> Optional[Candle]:
         """
-        Get the most recent closed candle using Binance API.
+        Get the most recent closed candle using CoinGecko API.
         
-        For forward testing, fetches the latest closed candle from Binance.
+        For forward testing, fetches the latest closed candle from CoinGecko.
         
         Args:
             asset: Trading asset (e.g., 'BTC/USDT')
@@ -616,8 +800,8 @@ class MarketDataService:
             Candle: Most recent closed candle or None
         """
         try:
-            # Fetch last 2 candles from Binance to ensure we get a closed one
-            candles = await self.get_historical_candles_binance(
+            # Fetch last 2 candles from CoinGecko to ensure we get a closed one
+            candles = await self.get_historical_candles_coingecko(
                 asset,
                 timeframe,
                 limit=2
@@ -630,7 +814,7 @@ class MarketDataService:
             # Return the most recent (last) candle
             return candles[-1]
         except Exception as e:
-            logger.error(f"Error getting latest candle from Binance for {asset}: {e}")
+            logger.error(f"Error getting latest candle from CoinGecko for {asset}: {e}")
             return None
     
     async def _load_from_db_cache(
@@ -707,7 +891,7 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error loading from database cache: {e}")
             return None
-    BINANCE_INTERVAL_MS: Dict[str, int] = {
+    TIMEFRAME_INTERVAL_MS: Dict[str, int] = {
         '15m': 15 * 60 * 1000,
         '1h': 60 * 60 * 1000,
         '4h': 4 * 60 * 60 * 1000,
@@ -757,7 +941,7 @@ class MarketDataService:
         Fetch candlestick data from external providers with fallbacks.
         
         For crypto assets, tries FreeCryptoAPI first (free, real-time).
-        Falls back to Binance REST API, then yfinance.
+        Falls back to CoinGecko API, then yfinance.
         """
         metadata = self.ASSET_CATALOG.get(asset, {})
         
@@ -779,8 +963,8 @@ class MarketDataService:
         
         for source in preferred_sources:
             try:
-                if source == 'binance':
-                    return await self._fetch_from_binance(asset, timeframe, start_date, end_date)
+                if source == 'coingecko':
+                    return await self._fetch_from_coingecko(asset, timeframe, start_date, end_date)
                 if source == 'yfinance':
                     return await self._fetch_from_yfinance(asset, timeframe, start_date, end_date)
             except Exception as exc:
@@ -869,77 +1053,121 @@ class MarketDataService:
         )
         return candles
     
-    async def _fetch_from_binance(
+    async def _fetch_from_coingecko(
         self,
         asset: str,
         timeframe: str,
         start_date: datetime,
         end_date: datetime
     ) -> List[Candle]:
-        symbol = self.ASSET_BINANCE_MAP.get(asset)
-        if not symbol:
-            raise Exception(f"No Binance symbol configured for {asset}")
+        coingecko_id = self.ASSET_COINGECKO_MAP.get(asset)
+        if not coingecko_id:
+            raise Exception(f"No CoinGecko ID configured for {asset}")
         
         interval = self.TIMEFRAME_INTERVAL_MAP[timeframe]
-        interval_ms = self.BINANCE_INTERVAL_MS[timeframe]
         logger.info(
-            "Fetching from Binance: %s interval=%s from %s to %s",
-            symbol,
+            "Fetching from CoinGecko: %s interval=%s from %s to %s",
+            coingecko_id,
             interval,
             start_date.date(),
             end_date.date()
         )
         
-        start_ms = int(start_date.timestamp() * 1000)
-        end_ms = int(end_date.timestamp() * 1000)
-        limit = 1000
-        candles: List[Candle] = []
-        current_start = start_ms
+        # Calculate days needed and map to allowed values
+        duration = end_date - start_date
+        days_int = max(1, duration.days + 1)
+        days_int = min(days_int, 365)  # CoinGecko free tier max is 365 days
         
-        async with httpx.AsyncClient(timeout=settings.MARKET_DATA_TIMEOUT) as client:
-            while current_start < end_ms:
-                params = {
-                    "symbol": symbol,
-                    "interval": interval,
-                    "startTime": current_start,
-                    "endTime": min(end_ms, current_start + interval_ms * limit),
-                    "limit": limit,
-                }
-                response = await client.get("https://api.binance.com/api/v3/klines", params=params)
-                response.raise_for_status()
-                data = response.json()
-                
-                if not data:
-                    break
-                
-                for entry in data:
-                    open_time = datetime.utcfromtimestamp(entry[0] / 1000)
-                    candle = Candle(
-                        timestamp=open_time,
-                        open=float(entry[1]),
-                        high=float(entry[2]),
-                        low=float(entry[3]),
-                        close=float(entry[4]),
-                        volume=float(entry[5]),
-                    )
-                    candles.append(candle)
-                
-                last_close = data[-1][6]
-                current_start = last_close + 1
-                
-                if len(data) < limit:
-                    break
+        # Map to allowed CoinGecko days values: '1', '7', '14', '30', '90', '180', '365', 'max'
+        def map_days_to_allowed(d: int) -> str:
+            if d <= 1:
+                return '1'
+            elif d <= 7:
+                return '7'
+            elif d <= 14:
+                return '14'
+            elif d <= 30:
+                return '30'
+            elif d <= 90:
+                return '90'
+            elif d <= 180:
+                return '180'
+            elif d <= 365:
+                return '365'
+            else:
+                return 'max'
         
-        if not candles:
-            raise Exception(
-                f"No data returned from Binance for {symbol} {interval} "
-                f"from {start_date.date()} to {end_date.date()}"
+        days = map_days_to_allowed(days_int)
+        
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def fetch_ohlc_sync():
+                return self.coingecko.coins.ohlc.get(
+                    id=coingecko_id,
+                    vs_currency='usd',
+                    days=days  # String: '1', '7', '14', '30', '90', '180', '365', 'max'
+                )
+            
+            ohlc_data = await asyncio.wait_for(
+                loop.run_in_executor(None, fetch_ohlc_sync),
+                timeout=settings.MARKET_DATA_TIMEOUT
             )
-        
-        logger.info(
-            "Successfully fetched %s candles from Binance", len(candles)
-        )
-        return candles
+            
+            if not ohlc_data:
+                raise Exception(f"No data returned from CoinGecko for {coingecko_id}")
+            
+            # CoinGecko OHLC format: list of [timestamp_ms, open, high, low, close]
+            # Convert to list if it's not already iterable
+            if not isinstance(ohlc_data, (list, tuple)):
+                try:
+                    ohlc_data = list(ohlc_data) if hasattr(ohlc_data, '__iter__') else []
+                except:
+                    ohlc_data = []
+            
+            candles: List[Candle] = []
+            for entry in ohlc_data:
+                try:
+                    # Entry format: [timestamp_ms, open, high, low, close]
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 5:
+                        timestamp_ms = int(entry[0])
+                        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+                        
+                        # Filter by date range
+                        if timestamp < start_date or timestamp > end_date:
+                            continue
+                        
+                        candle = Candle(
+                            timestamp=timestamp,
+                            open=float(entry[1]),
+                            high=float(entry[2]),
+                            low=float(entry[3]),
+                            close=float(entry[4]),
+                            volume=0.0  # CoinGecko OHLC doesn't include volume
+                        )
+                        candles.append(candle)
+                except Exception as e:
+                    logger.debug(f"Error parsing CoinGecko OHLC entry: {e}, entry={entry}")
+                    continue
+            
+            # Sort by timestamp
+            candles.sort(key=lambda c: c.timestamp)
+            
+            if not candles:
+                raise Exception(
+                    f"No data returned from CoinGecko for {coingecko_id} {interval} "
+                    f"from {start_date.date()} to {end_date.date()}"
+                )
+            
+            logger.info(
+                "Successfully fetched %s candles from CoinGecko", len(candles)
+            )
+            return candles
+            
+        except Exception as e:
+            logger.error(f"Error fetching from CoinGecko: {e}")
+            raise
     
     async def _fetch_from_freecryptoapi(
         self,

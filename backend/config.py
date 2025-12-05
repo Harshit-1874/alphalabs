@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Market Data API (placeholder for future use)
     MARKET_DATA_API_KEY: Optional[str] = None
     
+    # CoinGecko API Key (required - even free Demo plan needs API key)
+    # Free Demo plan: 30 calls/min, 10,000 calls/month
+    # Get your free API key from: https://www.coingecko.com/en/api/pricing
+    COINGECKO_API_KEY: Optional[str] = None
+    
     # Application Settings
     PORT: int = 5000
     ENVIRONMENT: str = "development"
