@@ -10,6 +10,7 @@ export interface ModelInfo {
   capabilities: string[];
   tags?: string[];
   isMultimodal?: boolean;
+  isFree?: boolean;  // True for free tier models, false for paid models
 }
 
 type ApiModel = {
@@ -21,6 +22,7 @@ type ApiModel = {
   capabilities: string[];
   tags?: string[];
   is_multimodal?: boolean;
+  is_free?: boolean;  // True for free tier models, false for paid models
 };
 
 export function useModels() {
@@ -48,6 +50,7 @@ export function useModels() {
           capabilities: model.capabilities,
           tags: model.tags,
           isMultimodal: model.is_multimodal,
+          isFree: model.is_free,
         }))
       );
     } catch (err) {
