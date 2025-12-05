@@ -216,28 +216,6 @@ export function ActivitySkeleton({ count = 4 }: { count?: number }) {
 // Chart Skeletons
 // ============================================
 
-export function ChartSkeleton({ height = 300 }: { height?: number }) {
-  return (
-    <div className="w-full rounded-lg bg-card/30 p-4" style={{ height }}>
-      <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-4 w-16" />
-        </div>
-        <div className="flex-1 flex items-end gap-1">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <Skeleton 
-              key={i} 
-              className="flex-1" 
-              style={{ height: `${Math.random() * 60 + 20}%` }} 
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ============================================
 // Table Skeletons
 // ============================================
@@ -295,6 +273,118 @@ export function PageLoadingSkeleton() {
           <Skeleton className="h-48 w-full rounded-lg" />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// Battle Screen Skeletons
+// ============================================
+
+export function BattleScreenSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-10 w-24" />
+          <Skeleton className="h-10 w-24" />
+          <Skeleton className="h-10 w-24" />
+        </div>
+      </div>
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="border-border/50 bg-card/30">
+            <CardContent className="p-4 space-y-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-6 w-24" />
+              <Skeleton className="h-3 w-16" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Main Content */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Chart Section */}
+        <div className="lg:col-span-2 space-y-4">
+          <Card className="border-border/50 bg-card/30">
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-[500px] w-full rounded-lg" />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          {/* Thoughts */}
+          <Card className="border-border/50 bg-card/30">
+            <CardHeader>
+              <Skeleton className="h-6 w-24" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="space-y-2 p-3 border border-border/30 rounded-lg">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Trades */}
+          <Card className="border-border/50 bg-card/30">
+            <CardHeader>
+              <Skeleton className="h-6 w-24" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="space-y-2 p-3 border border-border/30 rounded-lg">
+                  <div className="flex justify-between">
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChartSkeleton({ height = 300 }: { height?: number }) {
+  return (
+    <div className="w-full" style={{ height: `${height}px` }}>
+      <Skeleton className="h-full w-full rounded-lg" />
+    </div>
+  );
+}
+
+export function StatsRowSkeleton() {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Card key={i} className="border-border/50 bg-card/30">
+          <CardContent className="p-4 space-y-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-3 w-16" />
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
