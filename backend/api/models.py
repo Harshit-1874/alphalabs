@@ -17,6 +17,7 @@ class ModelInfo(BaseModel):
     capabilities: List[str] = []
     is_multimodal: bool = False
     is_free: bool = False  # True for free tier models, False for paid models
+    structured_data: dict = {}  # Raw OpenRouter API data (pricing, architecture, etc.)
 
 
 # ✅ ALL MODELS - Free and Paid (Updated Dec 2025)

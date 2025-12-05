@@ -11,6 +11,7 @@ export interface ModelInfo {
   tags?: string[];
   isMultimodal?: boolean;
   isFree?: boolean;  // True for free tier models, false for paid models
+  structuredData?: Record<string, any>;  // Raw OpenRouter API data
 }
 
 type ApiModel = {
@@ -23,6 +24,7 @@ type ApiModel = {
   tags?: string[];
   is_multimodal?: boolean;
   is_free?: boolean;  // True for free tier models, false for paid models
+  structured_data?: Record<string, any>;  // Raw OpenRouter API data
 };
 
 export function useModels() {
@@ -51,6 +53,7 @@ export function useModels() {
           tags: model.tags,
           isMultimodal: model.is_multimodal,
           isFree: model.is_free,
+          structuredData: model.structured_data,
         }))
       );
     } catch (err) {
