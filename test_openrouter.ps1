@@ -1,7 +1,20 @@
 # PowerShell script to test OpenRouter API
+
+# Get API key from environment variable
+$apiKey = $env:OPENROUTER_API_KEY
+
+if (-not $apiKey) {
+    Write-Host "❌ ERROR: OPENROUTER_API_KEY not found in environment" -ForegroundColor Red
+    Write-Host "ℹ️  INFO: Please set OPENROUTER_API_KEY environment variable or add it to backend/.env" -ForegroundColor Yellow
+    Write-Host "" 
+    Write-Host "To set it temporarily in PowerShell:" -ForegroundColor Cyan
+    Write-Host '  $env:OPENROUTER_API_KEY = "your-api-key-here"' -ForegroundColor Gray
+    exit 1
+}
+
 $headers = @{
     "Content-Type" = "application/json"
-    "Authorization" = "Bearer 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"
+    "Authorization" = "Bearer $apiKey"
 }
 
 $body = @{

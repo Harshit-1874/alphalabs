@@ -4,18 +4,32 @@ Example usage of AI Trader service.
 This example demonstrates how to use the AITrader class to get
 trading decisions from OpenRouter API.
 """
+import os
+import sys
 import asyncio
 from datetime import datetime
+from pathlib import Path
+from dotenv import load_dotenv
 from services.ai_trader import AITrader, AIDecision, Candle
 from services.trading.position_manager import Position
+
+# Load environment variables
+load_dotenv()
 
 
 async def main():
     """Example usage of AI Trader"""
     
+    # Get API key from environment
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        print("[ERROR] OPENROUTER_API_KEY not found in environment")
+        print("[INFO] Please set OPENROUTER_API_KEY environment variable or add it to .env file")
+        sys.exit(1)
+    
     # Initialize AI Trader
     trader = AITrader(
-        api_key="your-openrouter-api-key",
+        api_key=api_key,
         model="anthropic/claude-3.5-sonnet",
         strategy_prompt="""
         You are a momentum trader focusing on RSI and MACD signals.

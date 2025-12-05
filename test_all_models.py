@@ -3,12 +3,31 @@
 Test script to verify all OpenRouter models in the backend.
 Tests all models from AVAILABLE_MODELS and checks for issues.
 """
+import os
+import sys
 import requests
 import time
 import json
+from pathlib import Path
 from typing import List, Dict, Any
+from dotenv import load_dotenv
 
-API_KEY = "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"
+# Load environment variables from backend/.env
+backend_path = Path(__file__).parent / "backend"
+env_path = backend_path / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    # Try root .env
+    load_dotenv()
+
+# Get API key from environment
+API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not API_KEY:
+    print("[ERROR] OPENROUTER_API_KEY not found in environment")
+    print("[INFO] Please set OPENROUTER_API_KEY environment variable or add it to backend/.env")
+    sys.exit(1)
+
 TEST_PROMPT = "Say 'Hello, I am working!' in one sentence."
 
 # All models from backend/api/models.py

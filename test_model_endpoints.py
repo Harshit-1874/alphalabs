@@ -18,13 +18,12 @@ else:
     # Try root .env
     load_dotenv()
 
-# Use provided API key or try environment
-API_KEY = "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"
+# Get API key from environment
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not API_KEY:
-    API_KEY = os.getenv("OPENROUTER_API_KEY")
-    if not API_KEY:
-        print("[ERROR] OPENROUTER_API_KEY not found in environment")
-        sys.exit(1)
+    print("[ERROR] OPENROUTER_API_KEY not found in environment")
+    print("[INFO] Please set OPENROUTER_API_KEY environment variable or add it to backend/.env")
+    sys.exit(1)
 
 BASE_URL = "https://openrouter.ai/api/v1"
 HEADERS = {
