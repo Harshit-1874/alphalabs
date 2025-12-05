@@ -370,7 +370,7 @@ class ForwardEngine:
             async with self.session_factory() as db:
                 market_data_service = MarketDataService(db)
                 
-                # Fetch historical candles from Binance to show chart context
+                # Fetch historical candles from CoinGecko to show chart context
                 # AND initialize indicator calculator with historical data
                 # This gives users a full chart view with past data AND warms up indicators
                 historical_candles = []
@@ -388,7 +388,7 @@ class ForwardEngine:
                         f"{session_state.timeframe} (based on {len(session_state.agent.indicators or [])} enabled indicators)"
                     )
                     
-                    historical_candles = await market_data_service.get_historical_candles_binance(
+                    historical_candles = await market_data_service.get_historical_candles_coingecko(
                         session_state.asset,
                         session_state.timeframe,
                         limit=required_candles
@@ -916,7 +916,7 @@ class ForwardEngine:
                 if session_state.is_stopped:
                     break
                 
-                # Get current price from Binance
+                # Get current price from CoinGecko
                 price_data = await market_data_service.get_current_price(session_state.asset)
                 if price_data:
                     await self.broadcaster.broadcast_price_update(

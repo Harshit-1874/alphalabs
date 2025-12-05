@@ -18,6 +18,7 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 openai>=1.54.0
 yfinance==0.2.33
+coingecko-sdk>=1.0.0
 reportlab==4.0.8
 qrcode==7.4.2
 Pillow==10.2.0
