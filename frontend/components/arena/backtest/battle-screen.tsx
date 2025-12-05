@@ -146,9 +146,9 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   const progress = totalCandles > 0
     ? (currentCandle / totalCandles) * 100
     : 0;
-  const winRate = sessionStatus?.win_rate || (trades.length > 0
+  const winRate = trades.length > 0
     ? Math.round((trades.filter((t) => t.pnl > 0).length / trades.length) * 100)
-    : 0);
+    : (sessionStatus?.win_rate || 0);
 
   // WebSocket event handler with debouncing for performance
   useEffect(() => {
