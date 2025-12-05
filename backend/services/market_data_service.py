@@ -250,8 +250,11 @@ class MarketDataService:
         api_key = getattr(settings, 'COINGECKO_API_KEY', None)
         if api_key:
             # CoinGecko SDK uses demo_api_key for free tier, pro_api_key for paid plans
-            # For free demo plan, use demo_api_key
-            self.coingecko = Coingecko(demo_api_key=api_key)
+            # Demo API requires base_url to be api.coingecko.com (not pro-api.coingecko.com)
+            self.coingecko = Coingecko(
+                demo_api_key=api_key,
+                base_url='https://api.coingecko.com/api/v3'
+            )
             logger.info("MarketDataService initialized with CoinGecko API key (demo)")
         else:
             # CoinGecko SDK requires an API key - cannot work without it
