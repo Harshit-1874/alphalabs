@@ -124,6 +124,43 @@ class EventBroadcaster:
             f"index={candle_index}, close={candle.close}"
         )
     
+    async def send_candle_to_connection(
+        self,
+        connection_id: str,
+        candle: Candle,
+        indicators: Dict[str, float],
+        candle_index: int
+    ) -> None:
+        """
+        Send candle event to a specific WebSocket connection.
+        
+        Used when sending historical candles to reconnecting clients.
+        
+        Args:
+            connection_id: WebSocket connection identifier
+            candle: Candle data object
+            indicators: Calculated indicator values
+            candle_index: Candle index
+        """
+        event = Event(
+            type=EventType.CANDLE,
+            data={
+                "candle_index": candle_index,
+                "timestamp": candle.timestamp.isoformat(),
+                "open": candle.open,
+                "high": candle.high,
+                "low": candle.low,
+                "close": candle.close,
+                "volume": candle.volume,
+                "indicators": indicators
+            }
+        )
+        await self.websocket_manager.send_to_connection(connection_id, event)
+        self.logger.debug(
+            f"Sent candle to connection {connection_id}: "
+            f"index={candle_index}, close={candle.close}"
+        )
+    
     async def broadcast_ai_thinking(self, session_id: str) -> None:
         """
         Broadcast AI thinking event.

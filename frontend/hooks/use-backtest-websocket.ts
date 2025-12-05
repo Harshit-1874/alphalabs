@@ -32,6 +32,7 @@ export interface UseBacktestWebSocketReturn {
   sessionState: BacktestSessionState | null;
   error: string | null;
   reconnect: () => void;
+  isLoadingHistory: boolean;
 }
 
 function createInitialSessionState(
@@ -60,9 +61,15 @@ export function useBacktestWebSocket(
   const [isConnected, setIsConnected] = useState(false);
   const [sessionState, setSessionState] = useState<BacktestSessionState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const isLoadingHistoryRef = useRef(false); // Ref to avoid stale closure in callback
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const onEventRef = useRef(onEvent);
   const processedMessagesRef = useRef<Set<string>>(new Set());
+  const historicalCandlesCountRef = useRef<number>(0);
+  const lastCandleIndexRef = useRef<number>(-1);
+  const lastCandleTimeRef = useRef<number>(0);
+  const rapidCandleCountRef = useRef<number>(0);
 
   // Keep the ref updated with the latest callback without triggering reconnections
   useEffect(() => {
@@ -72,6 +79,12 @@ export function useBacktestWebSocket(
   // Clear processed messages when session changes
   useEffect(() => {
     processedMessagesRef.current.clear();
+    historicalCandlesCountRef.current = 0;
+    lastCandleIndexRef.current = -1;
+    lastCandleTimeRef.current = 0;
+    rapidCandleCountRef.current = 0;
+    isLoadingHistoryRef.current = false;
+    setIsLoadingHistory(false);
   }, [sessionId]);
 
   // Handle WebSocket events with state management
@@ -106,6 +119,45 @@ export function useBacktestWebSocket(
       processedMessagesRef.current = new Set(entries.slice(-500));
     }
     
+    // Detect historical candle loading based on RAPID arrival rate
+    // Historical batches arrive with <50ms between candles, normal backtests have 200-1000ms delays
+    if (message.type === "candle") {
+      const candleIndex = message.data?.candle_index ?? message.data?.candle_number ?? -1;
+      const now = Date.now();
+      
+      if (candleIndex >= 0) {
+        // Check if candles are arriving rapidly (< 50ms apart)
+        const timeSinceLastCandle = now - lastCandleTimeRef.current;
+        
+        if (timeSinceLastCandle < 50 && lastCandleTimeRef.current > 0) {
+          // Rapid candle arrival detected
+          rapidCandleCountRef.current++;
+          
+          // If we get 5+ rapid candles in a row, we're loading history
+          if (rapidCandleCountRef.current >= 5 && !isLoadingHistoryRef.current) {
+            isLoadingHistoryRef.current = true;
+            setIsLoadingHistory(true);
+            historicalCandlesCountRef.current = rapidCandleCountRef.current;
+          } else if (isLoadingHistoryRef.current) {
+            historicalCandlesCountRef.current++;
+          }
+        } else {
+          // Slow arrival - reset rapid counter
+          rapidCandleCountRef.current = 0;
+          
+          // If we were loading and now candles are slow, we're done
+          if (isLoadingHistoryRef.current && historicalCandlesCountRef.current > 10) {
+            isLoadingHistoryRef.current = false;
+            setIsLoadingHistory(false);
+            historicalCandlesCountRef.current = 0;
+          }
+        }
+        
+        lastCandleIndexRef.current = candleIndex;
+        lastCandleTimeRef.current = now;
+      }
+    }
+    
     // Handle different event types
     switch (message.type) {
       case "session_initialized": {
@@ -124,6 +176,8 @@ export function useBacktestWebSocket(
             totalCandles,
           };
         });
+        
+        // Don't set loading here - let candle detection handle it
         break;
       }
 
@@ -153,6 +207,7 @@ export function useBacktestWebSocket(
             progressPct,
           };
         });
+        
         break;
 
       case "stats_update":
@@ -160,14 +215,28 @@ export function useBacktestWebSocket(
         if (message.data) {
           setSessionState((prev) => {
             if (!prev) return prev;
+            const totalCandles = message.data.total_candles ?? prev.totalCandles;
+            const currentCandle = message.data.current_candle ?? prev.currentCandle;
+            const progressPct = totalCandles > 0
+              ? (currentCandle / totalCandles) * 100
+              : prev.progressPct;
             return {
               ...prev,
               currentEquity: message.data.current_equity ?? prev.currentEquity,
               currentPnlPct: message.data.equity_change_pct ?? prev.currentPnlPct,
               tradesCount: message.data.total_trades ?? prev.tradesCount,
               winRate: message.data.win_rate ?? prev.winRate,
+              currentCandle: currentCandle,
+              totalCandles: totalCandles,
+              progressPct: progressPct,
             };
           });
+          
+          // Stats update means backtest is active and processing, turn off loading
+          if (isLoadingHistoryRef.current) {
+            isLoadingHistoryRef.current = false;
+            setIsLoadingHistory(false);
+          }
         }
         break;
 
@@ -315,6 +384,7 @@ export function useBacktestWebSocket(
     sessionState,
     error,
     reconnect,
+    isLoadingHistory,
   };
 }
 

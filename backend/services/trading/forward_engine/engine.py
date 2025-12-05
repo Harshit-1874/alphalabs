@@ -171,6 +171,135 @@ class ForwardEngine:
         
         return required_candles
     
+    async def _fetch_and_store_historical_candles(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        session_state: Any
+    ) -> None:
+        """
+        Fetch historical candles and store them in session state.
+        
+        This is called BEFORE session_initialized is broadcast, ensuring
+        historical data is available when frontend calls the history API.
+        
+        Args:
+            db: Database session
+            session_id: Session identifier
+            session_state: Session state object
+        """
+        from services.market_data_service import MarketDataService
+        from datetime import timedelta
+        
+        market_data_service = MarketDataService(db)
+
+        try:
+            logger.info(
+                f"📊 Fetching historical data for forward test: "
+                f"session_id={session_id}, asset={session_state.asset}, timeframe={session_state.timeframe}"
+            )
+            
+            # Calculate required historical candles based on enabled indicators
+            required_candles = self._calculate_required_historical_candles(
+                enabled_indicators=session_state.agent.indicators or [],
+                timeframe=session_state.timeframe
+            )
+            
+            # Calculate date range
+            now = datetime.now(timezone.utc)
+            
+            # Set end_date to BEFORE the current candle (data providers don't have incomplete candles)
+            if session_state.timeframe == '15m':
+                end_date = now - timedelta(minutes=30)
+                days_back = (required_candles * 15) // (24 * 60) + 1
+            elif session_state.timeframe == '1h':
+                end_date = now - timedelta(hours=2)
+                days_back = (required_candles // 24) + 1
+            elif session_state.timeframe == '4h':
+                end_date = now - timedelta(hours=8)
+                days_back = (required_candles // 6) + 1
+            elif session_state.timeframe == '1d':
+                end_date = now - timedelta(days=2)
+                days_back = required_candles
+            else:
+                end_date = now - timedelta(days=1)
+                days_back = 30
+            
+            start_date = end_date - timedelta(days=days_back)
+            
+            logger.info(
+                f"🔍 Fetching historical data: asset={session_state.asset}, "
+                f"timeframe={session_state.timeframe}, range={start_date.date()} to {end_date.date()}"
+            )
+            
+            # Fetch historical data - try exact timeframe first, then fallback to any available data
+            historical_candles = None
+            try:
+                historical_candles = await market_data_service.get_historical_data(
+                    asset=session_state.asset,
+                    timeframe=session_state.timeframe,
+                    start_date=start_date,
+                    end_date=end_date
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch exact timeframe data: {e}")
+            
+            # Fallback: If no data, try CoinGecko directly using the SAME timeframe
+            # so that we still get intraday candles when the forward test is intraday.
+            if not historical_candles or len(historical_candles) == 0:
+                logger.info(
+                    "Trying CoinGecko fallback: fetching historical data for "
+                    f"{session_state.asset} {session_state.timeframe} "
+                    f"(limit={required_candles})"
+                )
+                try:
+                    historical_candles = await market_data_service.get_historical_candles_coingecko(
+                        asset=session_state.asset,
+                        timeframe=session_state.timeframe,
+                        # Use required_candles so indicators have enough history;
+                        # MarketDataService will map this to an appropriate days range
+                        # for CoinGecko under the hood.
+                        limit=required_candles
+                    )
+                except Exception as fallback_err:
+                    logger.warning(f"Fallback historical fetch also failed: {fallback_err}")
+            
+            if historical_candles and len(historical_candles) > 0:
+                logger.info(
+                    f"✓ Fetched {len(historical_candles)} historical candles for {session_state.asset}"
+                )
+                
+                # Store ALL historical candles immediately
+                # This ensures they're available when frontend calls history API
+                session_state.candles_processed = historical_candles.copy()
+                
+                # Initialize indicator calculator
+                session_state.indicator_calculator = IndicatorCalculator(
+                    candles=historical_candles,
+                    enabled_indicators=session_state.agent.indicators,
+                    mode=session_state.agent.mode,
+                    custom_indicators=session_state.agent.custom_indicators,
+                )
+                
+                # Calculate decision_start_index
+                INITIAL_READINESS_THRESHOLD = 0.8
+                session_state.decision_start_index = session_state.indicator_calculator.find_first_ready_index(
+                    min_ready_percentage=INITIAL_READINESS_THRESHOLD
+                )
+                
+                logger.info(
+                    f"Indicator calculator initialized: decision_start_index={session_state.decision_start_index}"
+                )
+            else:
+                logger.warning(
+                    f"⚠️ No historical candles fetched for {session_state.asset} {session_state.timeframe}"
+                )
+                session_state.candles_processed = []
+                
+        except Exception as e:
+            logger.error(f"Error fetching historical candles: {e}", exc_info=True)
+            session_state.candles_processed = []
+    
     async def start_forward_test(
         self,
         session_id: str,
@@ -279,6 +408,14 @@ class ForwardEngine:
                 # Store session state
                 self.active_sessions[session_id] = session_state
                 
+                # ============================================================
+                # CRITICAL: Fetch historical candles BEFORE broadcasting session_initialized
+                # This ensures the data is available when frontend calls the history API
+                # ============================================================
+                await self._fetch_and_store_historical_candles(
+                    db, session_id, session_state
+                )
+                
                 # Update session status to running
                 await self.database_manager.update_session_status(db, session_id, "running")
                 started_at = datetime.now(timezone.utc)
@@ -286,6 +423,8 @@ class ForwardEngine:
                 await self.database_manager.update_session_started_at(db, session_id, started_at)
                 
                 # Broadcast session initialized event
+                # By now, historical candles are in session_state.candles_processed
+                # and ready for the frontend to fetch via history API
                 await self.broadcaster.broadcast_session_initialized(
                     session_id,
                     agent.name,
@@ -295,7 +434,7 @@ class ForwardEngine:
                     email_notifications
                 )
                 
-                # Start forward test processing in background
+                # Start forward test processing in background (live candle loop only)
                 asyncio.create_task(
                     self._process_forward_test(session_id, email_notifications)
                 )
@@ -379,158 +518,55 @@ class ForwardEngine:
             async with self.session_factory() as db:
                 market_data_service = MarketDataService(db)
                 
-                # Fetch historical candles to show chart context
-                # AND initialize indicator calculator with historical data
-                # Use the same method as backtest for consistency
-                historical_candles = []
-                try:
-                    logger.info(f"Fetching historical data for {session_state.asset} {session_state.timeframe}")
-                    
-                    # Calculate required historical candles based on enabled indicators and timeframe
-                    required_candles = self._calculate_required_historical_candles(
-                        enabled_indicators=session_state.agent.indicators or [],
-                        timeframe=session_state.timeframe
-                    )
-                    
+                # Historical candles were already fetched in start_forward_test
+                # and stored in session_state.candles_processed
+                # Now broadcast them to any connected WebSocket clients
+                historical_candles = session_state.candles_processed or []
+                
+                if historical_candles and len(historical_candles) > 0:
                     logger.info(
-                        f"Fetching {required_candles} historical candles for {session_state.asset} "
-                        f"{session_state.timeframe} (based on {len(session_state.agent.indicators or [])} enabled indicators)"
+                        f"Broadcasting {len(historical_candles)} historical candles with indicators..."
                     )
                     
-                    # Calculate start_date based on required candles
-                    # Use the SAME approach as backtest: get_historical_data with date range
-                    from datetime import timedelta
-                    end_date = datetime.now(timezone.utc)
-                    
-                    # Calculate how far back we need to go based on timeframe
-                    if session_state.timeframe == '15m':
-                        days_back = (required_candles * 15) // (24 * 60) + 1
-                    elif session_state.timeframe == '1h':
-                        days_back = (required_candles // 24) + 1
-                    elif session_state.timeframe == '4h':
-                        days_back = (required_candles // 6) + 1
-                    elif session_state.timeframe == '1d':
-                        days_back = required_candles
-                    else:
-                        days_back = 30  # Default
-                    
-                    start_date = end_date - timedelta(days=days_back)
-                    
-                    logger.info(
-                        f"Fetching historical data from {start_date.date()} to {end_date.date()} "
-                        f"({days_back} days) for {session_state.asset} {session_state.timeframe}"
-                    )
-                    
-                    # Use the SAME method as backtest (works reliably with yfinance)
-                    historical_candles = await market_data_service.get_historical_data(
-                        asset=session_state.asset,
-                        timeframe=session_state.timeframe,
-                        start_date=start_date,
-                        end_date=end_date
-                    )
-                    
-                    if historical_candles and len(historical_candles) > 0:
-                        logger.info(f"Fetched {len(historical_candles)} historical candles")
-                        
-                        # Initialize indicator calculator with historical candles
-                        # This is critical - it warms up indicators so they're ready when first real candle arrives
-                        logger.info(
-                            f"Initializing indicator calculator with {len(historical_candles)} historical candles: "
-                            f"session_id={session_id}"
-                        )
-                        session_state.indicator_calculator = IndicatorCalculator(
-                            candles=historical_candles,
-                            enabled_indicators=session_state.agent.indicators,
-                            mode=session_state.agent.mode,
-                            custom_indicators=session_state.agent.custom_indicators,
-                        )
-                        
-                        # Calculate decision_start_index upfront (like backtest does)
-                        # Use 80% threshold for initial readiness check
-                        INITIAL_READINESS_THRESHOLD = 0.8
-                        session_state.decision_start_index = session_state.indicator_calculator.find_first_ready_index(
-                            min_ready_percentage=INITIAL_READINESS_THRESHOLD
-                        )
-                        
-                        logger.info(
-                            f"Indicator calculator initialized and decision_start_index calculated: "
-                            f"{session_state.decision_start_index} (threshold: {INITIAL_READINESS_THRESHOLD * 100}%)"
-                        )
-                        
-                        # Store historical candles in session state for context (except the last one)
-                        # We'll process the last one separately to get initial AI analysis
-                        # The last candle will be added by the processor
-                        if len(historical_candles) > 0:
-                            session_state.candles_processed = historical_candles[:-1].copy()
-                            last_historical_candle = historical_candles[-1]
-                        else:
-                            session_state.candles_processed = []
-                            last_historical_candle = None
-                        
-                        # Broadcast all historical candles to frontend for chart display
-                        # Now we can calculate indicators for them too!
-                        logger.info(f"Broadcasting {len(historical_candles)} historical candles with indicators...")
-                        batch_size = 50
-                        for batch_start in range(0, len(historical_candles), batch_size):
-                            batch = historical_candles[batch_start:batch_start + batch_size]
-                            for idx, candle in enumerate(batch):
-                                candle_idx = batch_start + idx
-                                # Calculate indicators for this historical candle
+                    batch_size = 50
+                    for batch_start in range(0, len(historical_candles), batch_size):
+                        batch = historical_candles[batch_start:batch_start + batch_size]
+                        for idx, candle in enumerate(batch):
+                            candle_idx = batch_start + idx
+                            # Calculate indicators for this historical candle
+                            if session_state.indicator_calculator:
                                 indicators = session_state.indicator_calculator.calculate_all(candle_idx)
-                                await self.broadcaster.broadcast_candle(
-                                    session_id,
-                                    candle,
-                                    indicators,  # Now with indicators!
-                                    -(len(historical_candles) - candle_idx)  # Negative numbers for historical
-                                )
-                            # Small delay between batches to avoid overwhelming
-                            await asyncio.sleep(0.1)
-                        
-                        logger.info(
-                            f"Successfully broadcasted {len(historical_candles)} historical candles with indicators: "
-                            f"session_id={session_id}"
-                        )
-                        
-                        # Process the last historical candle through AI to get initial analysis
-                        # This gives the agent an immediate assessment of current market state
-                        # before waiting for the first new candle to close
-                        if last_historical_candle:
-                            last_historical_idx = len(historical_candles) - 1
-                            if last_historical_idx >= session_state.decision_start_index:
-                                logger.info(
-                                    f"Processing last historical candle (index {last_historical_idx}) through AI "
-                                    f"for initial market analysis: session_id={session_id}"
-                                )
-                                
-                                # Process the last historical candle to get initial AI decision
-                                # This will add it to candles_processed and trigger AI analysis
-                                await self.processor.process_candle(
-                                    db,
-                                    session_id,
-                                    session_state,
-                                    last_historical_candle,
-                                    email_notifications
-                                )
-                                
-                                logger.info(
-                                    f"Initial AI analysis completed for historical candle: "
-                                    f"session_id={session_id}, timestamp={last_historical_candle.timestamp}"
-                                )
                             else:
-                                logger.info(
-                                    f"Skipping initial AI analysis: indicators not ready yet "
-                                    f"(decision_start_index={session_state.decision_start_index}, "
-                                    f"last_historical_idx={last_historical_idx}). "
-                                    f"Will process when first new candle arrives."
-                                )
-                                # Still add the last candle to processed list even if we skip AI
-                                session_state.candles_processed.append(last_historical_candle)
-                    else:
-                        logger.warning(f"No historical candles fetched for {session_state.asset}")
-                except Exception as e:
-                    logger.error(f"Could not fetch historical candles: {e}", exc_info=True)
-                    # If historical fetch fails, we'll initialize calculator lazily when first candle arrives
-                    # This is a fallback to ensure forward test can still start
+                                indicators = {}
+                            await self.broadcaster.broadcast_candle(
+                                session_id,
+                                candle,
+                                indicators,
+                                -(len(historical_candles) - candle_idx)  # Negative numbers for historical
+                            )
+                        # Small delay between batches to avoid overwhelming
+                        await asyncio.sleep(0.1)
+                    
+                    logger.info(
+                        f"Successfully broadcasted {len(historical_candles)} historical candles: session_id={session_id}"
+                    )
+                    
+                    # Process the last historical candle through AI for initial analysis
+                    # This gives users immediate AI feedback without waiting for the first live candle
+                    if session_state.indicator_calculator:
+                        last_idx = len(historical_candles) - 1
+                        if last_idx >= session_state.decision_start_index:
+                            logger.info(
+                                f"Processing last historical candle through AI for initial analysis..."
+                            )
+                            await self.processor.process_initial_ai_decision(
+                                db,
+                                session_id,
+                                session_state,
+                                email_notifications
+                            )
+                else:
+                    logger.warning(f"No historical candles available for {session_state.asset}")
                 
                 # Fetch and display the current (unclosed) candle immediately
                 # This gives users something to see right away instead of waiting
@@ -767,7 +803,7 @@ class ForwardEngine:
         """
         session_state = self.active_sessions.get(session_id)
         if not session_state:
-            logger.warning(f"Cannot send historical candles: session {session_id} not found")
+            logger.debug(f"Session {session_id} not yet initialized - historical candles will be sent once processing starts")
             return
         
         if not session_state.candles_processed or len(session_state.candles_processed) == 0:
@@ -775,7 +811,7 @@ class ForwardEngine:
             return
         
         if not session_state.indicator_calculator:
-            logger.warning(f"Cannot send historical candles: indicator calculator not initialized for session {session_id}")
+            logger.debug(f"Indicator calculator not yet ready for session {session_id} - no historical candles to send")
             return
         
         logger.info(

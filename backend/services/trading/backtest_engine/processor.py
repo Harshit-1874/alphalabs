@@ -471,7 +471,13 @@ class CandleProcessor:
         # Broadcast stats update
         stats = session_state.position_manager.get_stats()
         self._record_equity_point(session_state, candle.timestamp, stats["current_equity"])
-        await self.broadcaster.broadcast_stats_update(session_id, stats)
+        # Include progress information in stats update
+        stats_with_progress = {
+            **stats,
+            "current_candle": candle_index + 1,
+            "total_candles": len(session_state.candles),
+        }
+        await self.broadcaster.broadcast_stats_update(session_id, stats_with_progress)
 
         await self.database_manager.update_session_runtime_stats(
             db=db,

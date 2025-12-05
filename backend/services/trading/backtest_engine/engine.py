@@ -30,6 +30,7 @@ import asyncio
 import logging
 from datetime import datetime, date, timezone
 from typing import Dict, Optional, Union, List
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -95,12 +96,13 @@ class BacktestEngine:
     async def start_backtest(
         self,
         session_id: str,
-        agent: Agent,
-        asset: str,
-        timeframe: str,
-        start_date: Union[datetime, date],
-        end_date: Union[datetime, date],
-        starting_capital: float,
+        agent: Optional[Agent] = None,
+        agent_id: Optional[UUID] = None,
+        asset: str = "",
+        timeframe: str = "",
+        start_date: Optional[Union[datetime, date]] = None,
+        end_date: Optional[Union[datetime, date]] = None,
+        starting_capital: float = 0.0,
         safety_mode: bool = True,
         allow_leverage: bool = False,
         playback_speed: str = "normal",
@@ -120,7 +122,8 @@ class BacktestEngine:
         
         Args:
             session_id: Unique session identifier
-            agent: Agent configuration object
+            agent: Agent configuration object (optional, will be reloaded if expired)
+            agent_id: Agent ID (preferred for background tasks to avoid lazy loading)
             asset: Trading asset (e.g., 'BTC/USDT')
             timeframe: Candlestick timeframe (e.g., '1h')
             start_date: Backtest start date
@@ -133,22 +136,37 @@ class BacktestEngine:
             Exception: If data loading or initialization fails
         """
         # Normalize to datetime objects (handles date inputs from API)
+        if start_date is None or end_date is None:
+            raise ValidationError("start_date and end_date are required")
         start_dt = self._coerce_to_datetime(start_date, "start_date")
         end_dt = self._coerce_to_datetime(end_date, "end_date")
         
         start_date_str = start_dt.date()
         end_date_str = end_dt.date()
         
-        # Extract agent_id first (primary key access is safe, but avoid accessing other attributes)
+        # Extract agent_id - prefer passed agent_id, otherwise try to get from agent object
         # The agent object may be expired in background tasks, so we reload it below
-        try:
-            agent_id = agent.id
-        except Exception:
-            raise ValidationError("Agent ID could not be determined from agent object")
+        resolved_agent_id: Optional[UUID] = None
+        if agent_id:
+            resolved_agent_id = agent_id
+        elif agent:
+            # Try to get ID without triggering lazy load
+            try:
+                # Use getattr to avoid triggering lazy load if possible
+                resolved_agent_id = getattr(agent, 'id', None)
+                if resolved_agent_id is None:
+                    # Fallback: try direct access (may fail in background tasks)
+                    resolved_agent_id = agent.id
+            except Exception:
+                # Agent object is expired, we'll reload it below using session_id lookup
+                pass
+        
+        if not resolved_agent_id:
+            raise ValidationError("Agent ID could not be determined. Please provide agent_id parameter.")
         
         logger.info(
             f"Starting backtest: session_id={session_id}, "
-            f"agent_id={agent_id}, asset={asset}, timeframe={timeframe}, "
+            f"agent_id={resolved_agent_id}, asset={asset}, timeframe={timeframe}, "
             f"start={start_date_str}, end={end_date_str}"
         )
         
@@ -157,11 +175,7 @@ class BacktestEngine:
             async with self.session_factory() as db:
                 # Reload agent with api_key relationship to avoid lazy loading issues
                 # This ensures we have fresh data in the proper async context
-                # IMPORTANT: Expire any existing agent object to force fresh load from DB
-                
-                # Expire the agent object if it's in this session to force fresh load
-                if agent in db.identity_map.values():
-                    db.expire(agent)
+                # IMPORTANT: Always reload agent from DB in background tasks to avoid expired objects
                 
                 # Use a fresh query to ensure we get the latest data from the database
                 # This is critical if the agent was just updated
@@ -169,11 +183,11 @@ class BacktestEngine:
                 agent_result = await db.execute(
                     select(Agent)
                     .options(joinedload(Agent.api_key))
-                    .where(Agent.id == agent_id)
+                    .where(Agent.id == resolved_agent_id)
                 )
                 agent = agent_result.scalar_one_or_none()
                 if not agent:
-                    raise ValidationError(f"Agent not found: {agent_id}")
+                    raise ValidationError(f"Agent not found: {resolved_agent_id}")
                 
                 # Log for debugging
                 logger.info(
@@ -575,7 +589,13 @@ class BacktestEngine:
                                 ),
                                 current_candle=candle_index + 1,
                             )
-                            await self.broadcaster.broadcast_stats_update(session_id, stats)
+                            # Include progress information in stats update
+                            stats_with_progress = {
+                                **stats,
+                                "current_candle": candle_index + 1,
+                                "total_candles": len(session_state.candles),
+                            }
+                            await self.broadcaster.broadcast_stats_update(session_id, stats_with_progress)
                         
                         # NO DELAY during fast-forward - go as fast as possible!
                         # The chart will update as fast as WebSocket can handle it
@@ -877,6 +897,65 @@ class BacktestEngine:
         logger.info(f"Backtest stopped: session_id={session_id}, result_id={result_id}")
         
         return result_id
+    
+    async def send_historical_candles_to_connection(
+        self,
+        session_id: str,
+        connection_id: str
+    ) -> None:
+        """
+        Send all processed candles to a reconnecting WebSocket connection.
+        
+        This ensures reconnecting clients receive the full chart history
+        up to the current point in the backtest.
+        
+        Args:
+            session_id: Session identifier
+            connection_id: WebSocket connection identifier
+        """
+        session_state = self.active_sessions.get(session_id)
+        if not session_state:
+            logger.debug(f"Session {session_id} not found or not yet started - no historical candles to send")
+            return
+        
+        # If we haven't processed any candles yet, nothing to send
+        if session_state.current_index == 0:
+            logger.debug(f"No historical candles to send for session {session_id} - backtest just started")
+            return
+        
+        # Calculate how many candles have been processed (excluding the current one)
+        processed_count = session_state.current_index
+        
+        if processed_count == 0:
+            logger.debug(f"No candles processed yet for session {session_id}")
+            return
+        
+        logger.info(
+            f"Sending {processed_count} historical candles "
+            f"to connection {connection_id} for session {session_id}"
+        )
+        
+        # Send all processed candles with their indicators in batches
+        batch_size = 50  # Send in batches to prevent overwhelming the WebSocket
+        for batch_start in range(0, processed_count, batch_size):
+            batch_end = min(batch_start + batch_size, processed_count)
+            
+            for candle_idx in range(batch_start, batch_end):
+                candle = session_state.candles[candle_idx]
+                indicators = session_state.indicator_calculator.calculate_all(candle_idx)
+                
+                # Send each candle to the specific connection
+                await self.broadcaster.send_candle_to_connection(
+                    connection_id,
+                    candle,
+                    indicators,
+                    candle_idx
+                )
+            
+            # Small delay between batches to prevent overwhelming the connection
+            await asyncio.sleep(0.01)
+        
+        logger.info(f"Finished sending historical candles to connection {connection_id}")
     
     async def _complete_backtest(
         self,

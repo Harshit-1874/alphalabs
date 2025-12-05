@@ -540,6 +540,67 @@ export function LiveSessionView({ sessionId }: LiveSessionViewProps) {
     }
   }, [wsConnected, sessionId, hasReceivedInitialData]);
 
+  // Hydrate historical data on component mount or reconnect
+  const { getForwardHistory } = useArenaApi();
+  
+  useEffect(() => {
+    if (!sessionId || !wsConnected) return;
+    
+    const hydrateData = async () => {
+      try {
+        console.log("Hydrating forward test data from history endpoint...");
+        const history = await getForwardHistory(sessionId);
+        
+        if (history.candles && history.candles.length > 0) {
+          console.log(`Loaded ${history.candles.length} historical candles`);
+          // Transform candles from API format (timestamp) to CandleData format (time)
+          const transformedCandles: CandleData[] = history.candles
+            .map((c: any) => ({
+              time: new Date(c.timestamp).getTime(),
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume,
+            }))
+            .filter((c: CandleData) => !isNaN(c.time)) // Filter out any invalid candles
+            .sort((a: CandleData, b: CandleData) => a.time - b.time); // Ensure ascending order
+          
+          if (transformedCandles.length > 0) {
+            setCandlesState(transformedCandles);
+          }
+        }
+        
+        if (history.thoughts && history.thoughts.length > 0) {
+          console.log(`Loaded ${history.thoughts.length} historical thoughts`);
+          setThoughtsState(history.thoughts.map((t: any, idx: number) => ({
+            id: `${sessionId}-${t.candle_number}-${idx}`,
+            timestamp: new Date(t.timestamp),
+            candle: t.candle_number,
+            type: (t.decision && t.decision !== 'hold') ? "execution" : "decision",
+            content: t.reasoning || '',
+            action: t.decision?.toLowerCase() as AIThoughtType["action"],
+          })));
+        }
+        
+        if (history.trades && history.trades.length > 0) {
+          console.log(`Loaded ${history.trades.length} historical trades`);
+          setTradesState(history.trades);
+        }
+        
+        // Mark as having initial data
+        setHasReceivedInitialData(true);
+        setIsLoadingHistoricalData(false);
+      } catch (error) {
+        console.error("Failed to hydrate forward test data:", error);
+        // Still mark as loaded to show UI even without historical data
+        setIsLoadingHistoricalData(false);
+      }
+    };
+    
+    hydrateData();
+  }, [sessionId, wsConnected, getForwardHistory]);
+
   // Removed verbose logging - chart updates are working correctly
   
   // Detect when initial data has loaded

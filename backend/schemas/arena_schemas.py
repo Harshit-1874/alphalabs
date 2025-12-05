@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, Field, validator
 
-from schemas.data_schemas import CandleSchema
+from schemas.data_schemas import CandleSchema, CandleWithIndicatorsSchema
 
 # --- Backtest Schemas ---
 
@@ -113,6 +113,33 @@ class StopResponse(BaseModel):
     status: str
     result_id: Optional[UUID] = None
     final_pnl: Optional[float] = None
+
+
+# --- Backtest History ---
+class BacktestHistoryThought(BaseModel):
+    candle_number: int
+    timestamp: datetime
+    decision: Optional[str] = None
+    reasoning: Optional[str] = None
+    indicator_values: Dict[str, Optional[float]] = {}
+    order_data: Optional[Dict[str, Any]] = None
+    council_stage1: Optional[Any] = None
+    council_stage2: Optional[Any] = None
+    council_metadata: Optional[Any] = None
+
+
+class BacktestHistoryResponse(BaseModel):
+    candles: List[CandleWithIndicatorsSchema] = []
+    thoughts: List[BacktestHistoryThought] = []
+    trades: List[Any] = []  # TradeSchema from results, kept as Any to avoid circular imports
+
+
+class ForwardHistoryResponse(BaseModel):
+    """Response model for forward test history endpoint."""
+    candles: List[CandleWithIndicatorsSchema] = []
+    thoughts: List[BacktestHistoryThought] = []  # Reuse same schema
+    trades: List[Any] = []
+
 
 # --- Forward Test Schemas ---
 

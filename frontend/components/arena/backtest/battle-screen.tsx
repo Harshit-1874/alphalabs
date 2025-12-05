@@ -61,7 +61,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   } = useArenaStore();
   const { agents } = useAgentsStore();
   const { triggerRefresh: triggerResultsRefresh } = useResultsStore();
-  const { getBacktestStatus } = useArenaApi();
+  const { getBacktestStatus, getBacktestHistory } = useArenaApi();
   const { fetchTrades, fetchReasoning } = useResultsApi();
   const { post } = useApiClient();
   const { refreshResults, refreshDashboard } = useGlobalRefresh();
@@ -139,16 +139,6 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     thoughts: true,
     trades: true,
   });
-
-  const totalCandles = sessionStatus?.total_candles || 0;
-  const currentCandle = sessionStatus?.current_candle || 0;
-  // Calculate progress, using candles.length as fallback if sessionStatus is not available yet
-  const progress = totalCandles > 0
-    ? (currentCandle / totalCandles) * 100
-    : 0;
-  const winRate = trades.length > 0
-    ? Math.round((trades.filter((t) => t.pnl > 0).length / trades.length) * 100)
-    : (sessionStatus?.win_rate || 0);
 
   // WebSocket event handler with debouncing for performance
   useEffect(() => {
@@ -309,13 +299,24 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         }
         break;
     }
-  }, [asset, currentCandle, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId, triggerResultsRefresh, debouncedUpdateStats, addCandle, addTrade, addThought]);
+  }, [asset, showAnalyzing, narrate, showTradeExecuted, equity, pnl, router, setActiveSessionId, clearActiveSessionId, triggerResultsRefresh, debouncedUpdateStats, addCandle, addTrade, addThought]);
 
-  // Connect to WebSocket
-  const { isConnected, sessionState, error: wsError } = useBacktestWebSocket(
+  // WebSocket live state
+  const { isConnected, sessionState, error: wsError, isLoadingHistory } = useBacktestWebSocket(
     sessionId,
     handleWebSocketEvent
   );
+
+  // Prefer live websocket state for progress; fall back to sessionStatus/API
+  const totalCandles = sessionState?.totalCandles ?? sessionStatus?.total_candles ?? 0;
+  const currentCandle = sessionState?.currentCandle ?? sessionStatus?.current_candle ?? 0;
+  // Calculate progress, using candles.length as a weak fallback
+  const progress = totalCandles > 0
+    ? (currentCandle / totalCandles) * 100
+    : 0;
+  const winRate = sessionStatus?.win_rate || (trades.length > 0
+    ? Math.round((trades.filter((t) => t.pnl > 0).length / trades.length) * 100)
+    : 0);
 
   // Detect reconnection state - on mount, if we have no data yet, show reconnecting state
   useEffect(() => {
@@ -437,6 +438,79 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
 
     return () => clearInterval(pollInterval);
   }, [sessionId, getBacktestStatus, isConnected, updateSessionStats, statusChanged]);
+
+  // Hydrate history on first load (if nothing in store)
+  useEffect(() => {
+    const shouldHydrate =
+      candles.length === 0 && thoughts.length === 0 && trades.length === 0;
+    if (!shouldHydrate) return;
+
+    const hydrate = async () => {
+      try {
+        const history = await getBacktestHistory(sessionId);
+
+        // Candles
+        (history.candles || []).forEach((c) => {
+          const candleData: CandleData = {
+            time: new Date(c.timestamp).getTime(),
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          };
+          addCandle(sessionId, candleData);
+        });
+
+        // Thoughts
+        (history.thoughts || []).forEach((t, idx) => {
+          addThought(sessionId, {
+            id: `history-thought-${idx}-${t.candle_number}`,
+            timestamp: new Date(t.timestamp),
+            candle: t.candle_number,
+            type: "decision",
+            content: t.reasoning || "",
+            action: (t.decision || "").toLowerCase() as any,
+            decisionMode: undefined,
+            decisionInterval: undefined,
+            councilDeliberation: t.council_metadata
+              ? {
+                  stage1: t.council_stage1 || [],
+                  stage2: t.council_stage2 || [],
+                  stage3: (t.council_metadata as any).stage3 || null,
+                  aggregate_rankings: (t.council_metadata as any).aggregate_rankings || [],
+                  label_to_model: (t.council_metadata as any).label_to_model || {},
+                }
+              : undefined,
+          });
+        });
+
+        // Trades
+        (history.trades || []).forEach((tr, idx) => {
+          addTrade(sessionId, {
+            id: `history-trade-${idx}-${tr.trade_number}`,
+            tradeNumber: tr.trade_number,
+            type: tr.type === "short" ? "short" : "long",
+            entryPrice: tr.entry_price || 0,
+            exitPrice: tr.exit_price || 0,
+            size: tr.size || 0,
+            pnl: tr.pnl_amount || 0,
+            pnlPercent: tr.pnl_pct || 0,
+            entryTime: tr.entry_time ? new Date(tr.entry_time) : new Date(),
+            exitTime: tr.exit_time ? new Date(tr.exit_time) : new Date(),
+            reasoning: tr.entry_reasoning || "",
+            confidence: undefined,
+            stopLoss: tr.stop_loss || undefined,
+            takeProfit: tr.take_profit || undefined,
+          });
+        });
+      } catch (err) {
+        console.error("Failed to hydrate history", err);
+      }
+    };
+
+    void hydrate();
+  }, [sessionId, candles.length, thoughts.length, trades.length, addCandle, addThought, addTrade, getBacktestHistory]);
 
   // Sync WebSocket state with Zustand store
   useEffect(() => {
@@ -1058,7 +1132,19 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
           {/* Chart */}
           <Card className="border-border/50 bg-card/30 shrink-0">
             <CardContent className="p-1.5 sm:p-2">
-              {visibleCandles.length === 0 ? (
+              {isLoadingHistory ? (
+                <div className="relative">
+                  <ChartSkeleton height={300} />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="bg-background/80 backdrop-blur-sm px-4 py-2 rounded-lg border border-border/50 shadow-lg">
+                      <p className="text-sm text-muted-foreground flex items-center gap-2">
+                        <Activity className="h-4 w-4 animate-pulse" />
+                        Loading chart history...
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : visibleCandles.length === 0 ? (
                 <ChartSkeleton height={300} />
               ) : (
                 <CandlestickChart
