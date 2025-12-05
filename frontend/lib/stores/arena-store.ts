@@ -23,22 +23,22 @@ type SessionSnapshot = {
 interface ArenaState {
   // Active sessions
   liveSessions: LiveSession[];
-  
+
   // Current battle (backtest) - session-specific data
   battleState: BattleState | null;
   backtestConfig: BacktestConfig | null;
   activeSessionId: string | null;
-  
+
   // Session data (candles, trades, thoughts) - keyed by sessionId
   sessionData: Record<string, SessionSnapshot>;
-  
+
   // Forward test config
   forwardConfig: ForwardTestConfig | null;
-  
+
   // Battle controls
   isPlaying: boolean;
   playbackSpeed: PlaybackSpeed;
-  
+
   // Actions
   setBacktestConfig: (config: BacktestConfig) => void;
   setForwardConfig: (config: ForwardTestConfig) => void;
@@ -49,7 +49,7 @@ interface ArenaState {
   resumeBattle: () => void;
   stopBattle: () => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
-  
+
   // Session data actions
   addCandle: (sessionId: string, candle: CandleData) => void;
   addTrade: (sessionId: string, trade: Trade) => void;
@@ -69,7 +69,7 @@ interface ArenaState {
       totalCandles: number;
     }>
   ) => void;
-  
+
   // Live sessions
   addLiveSession: (session: LiveSession) => void;
   removeLiveSession: (id: string) => void;
@@ -87,26 +87,26 @@ interface ArenaState {
 export const useArenaStore = create<ArenaState>((set, get) => ({
   // Active sessions
   liveSessions: [],
-  
+
   // Battle state
   battleState: null,
   backtestConfig: null,
   activeSessionId: null,
   forwardConfig: null,
-  
+
   // Session data - keyed by sessionId
   sessionData: {},
-  
+
   // Controls
   isPlaying: false,
   playbackSpeed: "normal",
-  
+
   // Config setters
   setBacktestConfig: (config) => set({ backtestConfig: config }),
   setForwardConfig: (config) => set({ forwardConfig: config }),
   setActiveSessionId: (sessionId) => set({ activeSessionId: sessionId }),
   clearActiveSessionId: () => set({ activeSessionId: null }),
-  
+
   // Battle controls
   startBattle: (sessionId) =>
     set({
@@ -160,7 +160,7 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         : null,
     })),
   setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
-  
+
   // Session data actions
   addCandle: (sessionId, candle) =>
     set((state) => {
@@ -205,12 +205,12 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         currentCandle: 0,
         totalCandles: 0,
       };
-      
+
       // Deduplicate by trade_number if available, otherwise by id
       const existingIndex = trade.tradeNumber !== undefined
         ? session.trades.findIndex(t => t.tradeNumber === trade.tradeNumber)
         : session.trades.findIndex(t => t.id === trade.id);
-      
+
       let updatedTrades = [...session.trades];
       if (existingIndex >= 0) {
         // Update existing trade
@@ -219,7 +219,7 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         // Add new trade at the beginning
         updatedTrades = [trade, ...updatedTrades];
       }
-      
+
       // Sort by trade_number descending (newest first), then limit to 100
       updatedTrades.sort((a, b) => {
         if (a.tradeNumber !== undefined && b.tradeNumber !== undefined) {
@@ -227,7 +227,7 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         }
         return b.exitTime.getTime() - a.exitTime.getTime();
       });
-      
+
       return {
         sessionData: {
           ...state.sessionData,
@@ -309,7 +309,7 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
         },
       };
     }),
-  
+
   // Live sessions
   addLiveSession: (session) =>
     set((state) => ({ liveSessions: [...state.liveSessions, session] })),
@@ -331,12 +331,12 @@ export const useArenaStore = create<ArenaState>((set, get) => ({
           liveSessions: state.liveSessions.map((s) =>
             s.id === session.id
               ? {
-                  ...s,
-                  asset: session.asset,
-                  pnl: session.pnl,
-                  progress: session.progress,
-                  status: session.status as "running" | "paused",
-                }
+                ...s,
+                asset: session.asset,
+                pnl: session.pnl,
+                progress: session.progress,
+                status: session.status as "running" | "paused",
+              }
               : s
           ),
         };

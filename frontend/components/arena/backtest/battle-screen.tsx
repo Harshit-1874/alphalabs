@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Robot } from "@phosphor-icons/react";
 import Link from "next/link";
+import confetti from "canvas-confetti";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -92,7 +93,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resultId, setResultId] = useState<string | null>(null);
-  
+
   // Track reconnection loading state
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [hasReceivedData, setHasReceivedData] = useState(false);
@@ -142,8 +143,8 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
   const totalCandles = sessionStatus?.total_candles || 0;
   const currentCandle = sessionStatus?.current_candle || 0;
   // Calculate progress, using candles.length as fallback if sessionStatus is not available yet
-  const progress = totalCandles > 0 
-    ? (currentCandle / totalCandles) * 100 
+  const progress = totalCandles > 0
+    ? (currentCandle / totalCandles) * 100
     : 0;
   const winRate = sessionStatus?.win_rate || (trades.length > 0
     ? Math.round((trades.filter((t) => t.pnl > 0).length / trades.length) * 100)
@@ -160,11 +161,11 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
 
   const debouncedUpdateStats = useCallback((sessionId: string, stats: { equity?: number; pnl?: number }) => {
     pendingStatsRef.current = { ...pendingStatsRef.current, ...stats };
-    
+
     if (statsUpdateTimeoutRef.current) {
       clearTimeout(statsUpdateTimeoutRef.current);
     }
-    
+
     statsUpdateTimeoutRef.current = setTimeout(() => {
       if (pendingStatsRef.current) {
         updateSessionStats(sessionId, pendingStatsRef.current);
@@ -313,35 +314,35 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
     sessionId,
     handleWebSocketEvent
   );
-  
+
   // Detect reconnection state - on mount, if we have no data yet, show reconnecting state
   useEffect(() => {
     if (candles.length === 0 && !hasReceivedData) {
       setIsReconnecting(true);
     }
   }, [candles.length, hasReceivedData]);
-  
+
   // Detect when data has been received
   useEffect(() => {
     // Data is loaded when we have:
     // 1. WebSocket connected
     // 2. Candles received
     // 3. SessionStatus with valid total_candles (not 0)
-    const hasData = isConnected && 
-                    candles.length > 0 && 
-                    sessionStatus !== null && 
-                    sessionStatus.total_candles > 0;
-    
+    const hasData = isConnected &&
+      candles.length > 0 &&
+      sessionStatus !== null &&
+      sessionStatus.total_candles > 0;
+
     if (hasData && (isReconnecting || !hasReceivedData)) {
       setIsReconnecting(false);
       setHasReceivedData(true);
     }
   }, [candles.length, isConnected, sessionStatus, isReconnecting, hasReceivedData]);
-  
+
   // Timeout fallback - if connected but no data after 10 seconds, stop reconnecting
   useEffect(() => {
     if (!isReconnecting || !isConnected) return;
-    
+
     const timeout = setTimeout(() => {
       if (isReconnecting && isConnected) {
         console.log("Data load timeout - showing interface anyway");
@@ -349,7 +350,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
         setHasReceivedData(true);
       }
     }, 10000); // 10 second timeout
-    
+
     return () => clearTimeout(timeout);
   }, [isReconnecting, isConnected]);
 
@@ -651,6 +652,19 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
 
       narrate(completionSummary.text, completionSummary.type, completionSummary);
 
+      // Fire confetti animation for successful backtest
+      setTimeout(() => {
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6, x: 0.5 },
+          colors: ["#22c55e", "#86efac", "#fbbf24", "#E8400D"],
+          startVelocity: 45,
+          gravity: 1.2,
+          scalar: 1.2,
+        });
+      }, 1000);
+
       setTimeout(() => {
         celebrate({
           pnl,
@@ -710,16 +724,16 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
               <Activity className="h-6 w-6 text-[hsl(var(--brand-flame))] animate-pulse" />
             </div>
           </div>
-          
+
           <div className="text-center space-y-2">
             <h3 className="text-lg font-semibold">
               {hasReceivedData ? "Reconnecting to your session" : "Connecting to your session"}
             </h3>
             <p className="text-sm text-muted-foreground max-w-md">
-              {!isConnected 
-                ? "Establishing WebSocket connection..." 
-                : hasReceivedData 
-                  ? "Loading latest data..." 
+              {!isConnected
+                ? "Establishing WebSocket connection..."
+                : hasReceivedData
+                  ? "Loading latest data..."
                   : "Loading session data..."}
             </p>
             {candles.length > 0 && (
@@ -736,7 +750,7 @@ export function BattleScreen({ sessionId }: BattleScreenProps) {
             )}
           </div>
         </motion.div>
-        
+
         {/* Skeleton cards preview */}
         <div className="w-full max-w-4xl px-4 space-y-3 opacity-50">
           <div className="h-12 bg-card/50 border border-border/50 rounded-lg animate-pulse" />
