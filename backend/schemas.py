@@ -41,16 +41,9 @@ class UserProfileUpdate(BaseModel):
     
     @classmethod
     def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
-        """Validate timezone string against pytz timezones."""
-        if v is not None:
-            try:
-                import pytz
-                if v not in pytz.all_timezones:
-                    raise ValueError(f"Invalid timezone: {v}")
-            except ImportError:
-                # If pytz not available, skip validation
-                pass
-        return v
+        """Validate timezone string using cached timezone list."""
+        from utils.timezone_cache import validate_timezone as validate_tz
+        return validate_tz(v)
 
 
 # --- User Settings Schemas ---
