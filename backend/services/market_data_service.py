@@ -1353,48 +1353,38 @@ class MarketDataService:
             return
         
         try:
-            # Create cache entries
-            cache_entries = []
-            for candle in candles:
-                entry = MarketDataCache(
-                    asset=asset,
-                    timeframe=timeframe,
-                    timestamp=candle.timestamp,
-                    open=Decimal(str(candle.open)),
-                    high=Decimal(str(candle.high)),
-                    low=Decimal(str(candle.low)),
-                    close=Decimal(str(candle.close)),
-                    volume=Decimal(str(candle.volume)),
-                    indicators=None  # Indicators calculated separately
-                )
-                cache_entries.append(entry)
-            
-            # Bulk insert with conflict handling using INSERT ... ON CONFLICT DO NOTHING
-            # This is much more efficient than merge() and properly handles duplicates
+            # Prepare bulk insert data
+            # Convert candles to list of dicts for bulk insert
             from sqlalchemy.dialects.postgresql import insert
             
-            for entry in cache_entries:
-                stmt = insert(MarketDataCache).values(
-                    asset=entry.asset,
-                    timeframe=entry.timeframe,
-                    timestamp=entry.timestamp,
-                    open=entry.open,
-                    high=entry.high,
-                    low=entry.low,
-                    close=entry.close,
-                    volume=entry.volume,
-                    indicators=entry.indicators
-                )
-                # On conflict (duplicate key), do nothing - skip the insert
-                stmt = stmt.on_conflict_do_nothing(
-                    index_elements=['asset', 'timeframe', 'timestamp']
-                )
-                await self.db.execute(stmt)
+            values_list = []
+            for candle in candles:
+                values_list.append({
+                    'asset': asset,
+                    'timeframe': timeframe,
+                    'timestamp': candle.timestamp,
+                    'open': Decimal(str(candle.open)),
+                    'high': Decimal(str(candle.high)),
+                    'low': Decimal(str(candle.low)),
+                    'close': Decimal(str(candle.close)),
+                    'volume': Decimal(str(candle.volume)),
+                    'indicators': None  # Indicators calculated separately
+                })
             
+            # Bulk insert with conflict handling using INSERT ... ON CONFLICT DO NOTHING
+            # This is MUCH more efficient than individual inserts (single query vs N queries)
+            stmt = insert(MarketDataCache).values(values_list)
+            
+            # On conflict (duplicate key), do nothing - skip the insert
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=['asset', 'timeframe', 'timestamp']
+            )
+            
+            await self.db.execute(stmt)
             await self.db.commit()
             
             logger.info(
-                f"Cached {len(cache_entries)} candles to database "
+                f"Bulk cached {len(values_list)} candles to database "
                 f"for {asset} {timeframe}"
             )
             
