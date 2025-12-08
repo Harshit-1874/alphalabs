@@ -60,6 +60,15 @@ class ExportService:
             self._storage = StorageClient()
         return self._storage
     
+    async def cleanup(self):
+        """
+        Cleanup resources, including closing the storage client.
+        Should be called when the service is no longer needed.
+        """
+        if self._storage is not None:
+            await self._storage.close()
+            self._storage = None
+    
     async def create_export(
         self,
         user_id: UUID,

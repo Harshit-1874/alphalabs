@@ -107,8 +107,9 @@ async def lifespan(app: FastAPI):
     if startup_success:
         logger.info("Shutting down application...")
         logger.info("  Closing database connections...")
-        from database import engine
+        from database import engine, close_supabase_client
         await engine.dispose()
+        await close_supabase_client()
         logger.info("✓ Shutdown complete")
 
 

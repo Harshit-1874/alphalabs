@@ -13,19 +13,32 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Global Supabase client instance (singleton pattern)
+_supabase_client: Client = None
+
+
 def get_supabase_client() -> Client:
     """
-    Create and return a Supabase client instance
+    Get or create a Supabase client instance (singleton pattern).
+    
+    Returns a reusable client instance to avoid creating multiple connections.
+    The client will be properly closed during application shutdown.
     
     Requires either:
     - SUPABASE_URL and SUPABASE_KEY (recommended for Supabase client)
     - Or DB_CONNECTION_STRING (for direct PostgreSQL access, but Supabase client needs URL + KEY)
     """
+    global _supabase_client
+    
+    if _supabase_client is not None:
+        return _supabase_client
+    
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
     
     if supabase_url and supabase_key:
-        return create_client(supabase_url, supabase_key)
+        _supabase_client = create_client(supabase_url, supabase_key)
+        return _supabase_client
     
     # If using connection string, you still need URL and KEY for Supabase client
     # The connection string is for direct PostgreSQL access (psql, SQLAlchemy, etc.)
@@ -41,6 +54,28 @@ def get_supabase_client() -> Client:
         "Either SUPABASE_URL and SUPABASE_KEY, or DB_CONNECTION_STRING must be set. "
         "For Supabase client, use SUPABASE_URL and SUPABASE_KEY from project settings."
     )
+
+
+async def close_supabase_client():
+    """
+    Close the global Supabase client and cleanup connections.
+    
+    This should be called during application shutdown to properly
+    release HTTP connections and resources.
+    """
+    global _supabase_client
+    
+    if _supabase_client is not None:
+        try:
+            # Close the underlying httpx client if it exists
+            if hasattr(_supabase_client, 'postgrest') and hasattr(_supabase_client.postgrest, 'session'):
+                await _supabase_client.postgrest.session.aclose()
+            
+            logger.info("  Supabase client connections closed")
+        except Exception as e:
+            logger.warning(f"  Error closing Supabase client: {e}")
+        finally:
+            _supabase_client = None
 
 
 # SQLAlchemy async setup
