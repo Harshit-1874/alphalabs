@@ -6,15 +6,23 @@ Purpose:
     from Supabase Storage buckets. Used for storing certificates and exports.
 
 Usage:
+    # Recommended: Use as async context manager for automatic cleanup
     from utils.storage import StorageClient
     
+    async with StorageClient() as storage:
+        url = await storage.upload_file(
+            bucket='certificates',
+            file_name='cert_123.pdf',
+            file_data=pdf_bytes,
+            content_type='application/pdf'
+        )
+    
+    # Alternative: Manual cleanup (for services with lazy initialization)
     storage = StorageClient()
-    url = await storage.upload_file(
-        bucket='certificates',
-        file_name='cert_123.pdf',
-        file_data=pdf_bytes,
-        content_type='application/pdf'
-    )
+    try:
+        url = await storage.upload_file(...)
+    finally:
+        await storage.close()
 """
 from typing import Optional
 from supabase import create_client, Client
@@ -67,6 +75,28 @@ class StorageClient:
             else:
                 raise
         self.storage = self.client.storage
+    
+    async def close(self):
+        """
+        Close the Supabase client and cleanup connections.
+        
+        Should be called when the StorageClient is no longer needed
+        to properly release HTTP connections.
+        """
+        try:
+            if hasattr(self.client, 'postgrest') and hasattr(self.client.postgrest, 'session'):
+                await self.client.postgrest.session.aclose()
+            logger.debug("StorageClient connections closed")
+        except Exception as e:
+            logger.warning(f"Error closing StorageClient: {e}")
+    
+    async def __aenter__(self):
+        """Support async context manager."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup on context manager exit."""
+        await self.close()
     
     async def upload_file(
         self,
