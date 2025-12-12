@@ -36,13 +36,13 @@ export default function LD2DashboardPreview() {
 
       {/* Dashboard Preview Video */}
       <motion.div
-        className="w-full border border-gray-200 p-2 rounded-3xl bg-white"
+        className="w-full border border-gray-200 p-1 rounded-3xl bg-white"
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6, duration: 0.8 }}
       >
         <div className="relative w-full">
-          <div className="relative w-full rounded-2xl overflow-hidden border border-gray-100 shadow-2xl">
+          <div className="relative w-full rounded-xl overflow-hidden border border-gray-100 shadow-2xl">
             <video
               src="/lpv.mp4"
               autoPlay
@@ -52,10 +52,12 @@ export default function LD2DashboardPreview() {
               className="w-full h-full object-center block rounded-2xl"
             />
           </div>
-          {/* Gradient fade at bottom */}
-          <div className="absolute inset-x-0 bottom-0 h-[50%] bg-gradient-to-t from-white to-transparent rounded-b-2xl" />
+
+          {/* Gradient fade at bottom — REDUCED thickness */}
+          <div className="absolute inset-x-0 bottom-0 h-[20%] bg-gradient-to-t from-white to-transparent rounded-b-2xl" />
         </div>
       </motion.div>
+
     </div>
   );
 }
