@@ -15,6 +15,7 @@ import {
   useDashboardDataContext,
 } from "@/components/providers/dashboard-data-provider";
 import { GlobalBacktestStream } from "@/components/providers/global-backtest-stream";
+import { ActiveSessionsProvider } from "@/components/providers/active-sessions-provider";
 
 // Accent color mappings to HSL values
 const accentColorMap: Record<AccentColor, { primary: string; ring: string }> = {
@@ -212,10 +213,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <DashboardDataProvider>
-      <DashboardLayoutInner>
-        <GlobalBacktestStream />
-        {children}
-      </DashboardLayoutInner>
+      <ActiveSessionsProvider>
+        <DashboardLayoutInner>
+          <GlobalBacktestStream />
+          {children}
+        </DashboardLayoutInner>
+      </ActiveSessionsProvider>
     </DashboardDataProvider>
   );
 }
