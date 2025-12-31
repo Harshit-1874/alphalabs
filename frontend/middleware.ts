@@ -5,13 +5,17 @@ const isProtectedRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  // Skip RSC requests - they're handled by Next.js
-  if (req.nextUrl.searchParams.has("_rsc")) {
-    return;
+  // Check if route is protected first
+  if (isProtectedRoute(req)) {
+    // Always protect protected routes, even for RSC requests
+    // RSC requests still need authentication to access protected data
+    await auth.protect();
   }
   
-  if (isProtectedRoute(req)) {
-    await auth.protect();
+  // Skip further processing for RSC requests on non-protected routes
+  // (RSC requests for protected routes already went through auth.protect() above)
+  if (req.nextUrl.searchParams.has("_rsc")) {
+    return;
   }
 });
 

@@ -23,16 +23,12 @@ interface SessionsState {
   setError: (error: string | null) => void;
   setLastFetchedAt: (timestamp: number) => void;
   
-  // Combined getters
-  getAllSessions: () => ForwardSession[];
-  getActiveSessions: () => ForwardSession[];
-  
   // Refresh trigger
   refreshKey: number;
   triggerRefresh: () => void;
 }
 
-export const useSessionsStore = create<SessionsState>((set, get) => ({
+export const useSessionsStore = create<SessionsState>((set) => ({
   // Initial state
   forwardSessions: [],
   backtestSessions: [],
@@ -48,17 +44,14 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   setError: (error) => set({ error }),
   setLastFetchedAt: (timestamp) => set({ lastFetchedAt: timestamp }),
   triggerRefresh: () => set((state) => ({ refreshKey: state.refreshKey + 1 })),
-  
-  // Getters
-  getAllSessions: () => {
-    const state = get();
-    return [...state.forwardSessions, ...state.backtestSessions];
-  },
-  
-  getActiveSessions: () => {
-    const state = get();
-    const all = [...state.forwardSessions, ...state.backtestSessions];
-    return all.filter(s => s.status === "running" || s.status === "paused");
-  },
 }));
+
+// Reactive selectors - these create subscriptions when used in components
+export const selectAllSessions = (state: SessionsState): ForwardSession[] => 
+  [...state.forwardSessions, ...state.backtestSessions];
+
+export const selectActiveSessions = (state: SessionsState): ForwardSession[] => 
+  [...state.forwardSessions, ...state.backtestSessions]
+    .filter(s => s.status === "running" || s.status === "paused");
+
 
