@@ -198,6 +198,11 @@ class ForwardActiveSession(BaseModel):
 class ForwardActiveListResponse(BaseModel):
     sessions: List[ForwardActiveSession]
 
+class ActiveSessionsResponse(BaseModel):
+    """Combined response for both forward and backtest active sessions"""
+    forward: List[ForwardActiveSession]
+    backtest: List[ForwardActiveSession]
+
 class ForwardStatusResponse(BaseModel):
     id: UUID
     status: str

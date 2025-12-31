@@ -5,6 +5,7 @@ from typing import Optional, Tuple, Dict, List, Any, Set
 from uuid import UUID
 import uuid
 import logging
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +20,7 @@ from schemas.arena_schemas import (
     OpenPosition, BacktestStatusWrapper,
     ForwardStartRequest, ForwardStartResponse, ForwardSessionResponse,
     ForwardActiveSession, ForwardActiveListResponse, ForwardStatusWrapper, ForwardStopResponse,
-    ForwardHistoryResponse
+    ForwardHistoryResponse, ActiveSessionsResponse
 )
 from schemas.data_schemas import CandleSchema
 from models.agent import Agent
@@ -475,6 +476,168 @@ async def get_backtest_active_sessions(
     sessions = sessions[:limit]
     
     return {"sessions": sessions}
+
+
+async def _get_active_sessions_for_type(
+    db: AsyncSession,
+    current_user: dict,
+    engine: Any,  # ForwardEngine or BacktestEngine
+    session_type: str,  # "forward" or "backtest"
+    agent_id: Optional[UUID] = None,
+    statuses: Optional[List[str]] = None,
+    limit: int = 20,
+) -> List[ForwardActiveSession]:
+    """Helper function to get active sessions for a given type."""
+    sessions: List[ForwardActiveSession] = []
+    seen_ids: Set[UUID] = set()
+    now = datetime.now(timezone.utc)
+    STALE_THRESHOLD_HOURS = 2
+    
+    # Collect in-memory sessions first
+    for session_id_str, state in engine.active_sessions.items():
+        if state.agent.user_id != current_user.id:
+            continue
+        if agent_id and state.agent.id != agent_id:
+            continue
+        session_uuid = UUID(session_id_str)
+        stats = state.position_manager.get_stats()
+        started_at = state.started_at or now
+        elapsed_seconds = int((now - started_at).total_seconds())
+        elapsed_hours = elapsed_seconds / 3600
+        status_value = "running" if not state.is_paused else "paused"
+        
+        if statuses and status_value not in statuses:
+            continue
+        
+        if stats["total_trades"] == 0 and elapsed_hours > STALE_THRESHOLD_HOURS:
+            continue
+        
+        sessions.append(
+            ForwardActiveSession(
+                id=session_uuid,
+                agent_id=state.agent.id,
+                agent_name=state.agent.name,
+                asset=state.asset,
+                status=status_value,
+                started_at=started_at,
+                duration_display=_format_duration(elapsed_seconds),
+                current_pnl_pct=stats["equity_change_pct"],
+                trades_count=stats["total_trades"],
+                win_rate=stats["win_rate"]
+            )
+        )
+        seen_ids.add(session_uuid)
+    
+    # Build DB query
+    base_query = (
+        select(TestSession, Agent)
+        .join(Agent, Agent.id == TestSession.agent_id)
+        .where(TestSession.user_id == current_user.id)
+        .where(TestSession.type == session_type)
+    )
+    if statuses:
+        base_query = base_query.where(TestSession.status.in_(tuple(statuses)))
+    else:
+        base_query = base_query.where(TestSession.status.in_(("running", "paused", "initializing")))
+    if agent_id:
+        base_query = base_query.where(TestSession.agent_id == agent_id)
+    
+    base_query = base_query.order_by(TestSession.started_at.desc().nulls_last(), TestSession.created_at.desc())
+    db_result = await db.execute(base_query)
+    rows = db_result.all()
+    
+    db_session_ids = [row[0].id for row in rows if row[0].id not in seen_ids]
+    trade_stats = await _get_trade_stats(db, db_session_ids) if db_session_ids else {}
+    
+    for session, agent in rows:
+        if session.id in seen_ids:
+            continue
+        if len(sessions) >= limit:
+            break
+        
+        duration_seconds = session.elapsed_seconds or 0
+        if not duration_seconds and session.started_at:
+            duration_seconds = int((now - session.started_at).total_seconds())
+        
+        duration_hours = duration_seconds / 3600
+        trades_count, win_rate = trade_stats.get(session.id, (0, 0.0))
+        
+        if trades_count == 0 and duration_hours > STALE_THRESHOLD_HOURS:
+            continue
+        
+        agent_name = agent.name if agent else "Unknown Agent"
+        if not agent_name or len(agent_name.strip()) < 2:
+            continue
+        
+        sessions.append(
+            ForwardActiveSession(
+                id=session.id,
+                agent_id=session.agent_id,
+                agent_name=agent_name,
+                asset=session.asset,
+                status=session.status,
+                started_at=session.started_at or session.created_at,
+                duration_display=_format_duration(duration_seconds),
+                current_pnl_pct=float(session.current_pnl_pct or 0),
+                trades_count=trades_count,
+                win_rate=win_rate
+            )
+        )
+    
+    def sort_key(s: ForwardActiveSession) -> tuple:
+        has_trades = s.trades_count == 0
+        timestamp = 0
+        if s.started_at:
+            if isinstance(s.started_at, datetime):
+                timestamp = s.started_at.timestamp()
+            elif hasattr(s.started_at, 'timestamp'):
+                timestamp = s.started_at.timestamp()
+        return (has_trades, -timestamp)
+    
+    sessions.sort(key=sort_key)
+    return sessions[:limit]
+
+
+@router.get("/active", response_model=ActiveSessionsResponse)
+async def get_all_active_sessions(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    forward_engine: ForwardEngine = Depends(get_forward_engine),
+    backtest_engine: BacktestEngine = Depends(get_backtest_engine),
+    agent_id: Optional[UUID] = None,
+    statuses: Optional[List[str]] = Query(
+        None,
+        description="Filter by status (running, paused, initializing)"
+    ),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of sessions per type to return"),
+):
+    """Get all active sessions (both forward and backtest) in a single call."""
+    # Fetch both types in parallel
+    forward_sessions, backtest_sessions = await asyncio.gather(
+        _get_active_sessions_for_type(
+            db=db,
+            current_user=current_user,
+            engine=forward_engine,
+            session_type="forward",
+            agent_id=agent_id,
+            statuses=statuses,
+            limit=limit
+        ),
+        _get_active_sessions_for_type(
+            db=db,
+            current_user=current_user,
+            engine=backtest_engine,
+            session_type="backtest",
+            agent_id=agent_id,
+            statuses=statuses,
+            limit=limit
+        )
+    )
+    
+    return {
+        "forward": forward_sessions,
+        "backtest": backtest_sessions
+    }
 
 
 @router.get("/forward/{id}", response_model=ForwardStatusWrapper)
